@@ -10,7 +10,7 @@ import { revalidatePath } from 'next/cache';
 // For demonstration, we use an in-memory array.
 const mockTransactionsStore: Transaction[] = [
   {
-    id: 'txn_1P2gHh9jKlMnOpQrStUvWxYz',
+    id: 'txn_1P2gHh9jKlMnOpQrStUvWxYz', // Keeping existing mock IDs as is, new ones will follow new format
     amount: 1500.00,
     currency: 'KES',
     recipientPhone: '+254712345678',
@@ -22,7 +22,7 @@ const mockTransactionsStore: Transaction[] = [
     mpesaTransactionId: 'NAK876HYT1'
   },
   {
-    id: 'txn_0P1fGe8iJkLmNoPqRsTuVwXy',
+    id: 'txn_0P1fGe8iJkLmNoPqRsTuVwXy', // Keeping existing mock IDs as is
     amount: 750.50,
     currency: 'KES',
     recipientPhone: '+254723456789',
@@ -33,7 +33,7 @@ const mockTransactionsStore: Transaction[] = [
     senderEmail: 'jane.smith@example.com'
   },
   {
-    id: 'txn_3R4tYu6oPqRsTuVwXyZ1aBcD',
+    id: 'txn_3R4tYu6oPqRsTuVwXyZ1aBcD', // Keeping existing mock IDs as is
     amount: 2500.00,
     currency: 'KES',
     recipientPhone: '+254734567890',
@@ -45,25 +45,30 @@ const mockTransactionsStore: Transaction[] = [
   },
 ];
 
-let globalTransactionCounter = 0; // Counter for sequential part of the ID
+function generateRandomAlphanumeric(length: number): string {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result;
+}
 
 function generateNewTransactionId(): string {
-  globalTransactionCounter++;
-  const counterString = String(globalTransactionCounter).padStart(7, '0');
-  // Generate 3 random uppercase letters for prefix
-  const P1 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-  const P2 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-  const P3 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-  return `${P1}${P2}${P3}${counterString}`; // e.g., RFA0000001
+  let newId: string;
+  let isUnique = false;
+  do {
+    newId = generateRandomAlphanumeric(10);
+    // Check if this ID already exists in the store
+    if (!mockTransactionsStore.some(txn => txn.id === newId)) {
+      isUnique = true;
+    }
+  } while (!isUnique);
+  return newId; // e.g., AB1CD2EF3G
 }
 
 function generateMpesaConfirmationCode(): string {
-  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < 10; i++) {
-    result += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
-  return result; // e.g., QWERTY123A
+  return generateRandomAlphanumeric(10); // e.g., QWERTY123A
 }
 
 
@@ -162,7 +167,7 @@ export async function updateTransactionStatus(id: string, status: Transaction['s
     mockTransactionsStore[transactionIndex].updatedAt = new Date().toISOString();
     
     if (status === 'COMPLETED') {
-      mockTransactionsStore[transactionIndex].mpesaTransactionId = generateMpesaConfirmationCode(); // Use new MPESA code generation
+      mockTransactionsStore[transactionIndex].mpesaTransactionId = generateMpesaConfirmationCode();
     }
     
     revalidatePath(`/dashboard/transfer/status/${id}`);
@@ -172,3 +177,4 @@ export async function updateTransactionStatus(id: string, status: Transaction['s
   }
   return null;
 }
+
