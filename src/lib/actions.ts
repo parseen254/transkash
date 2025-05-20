@@ -7,7 +7,7 @@ import { revalidatePath } from 'next/cache';
 
 // In a real app, this would be a database or a persistent store.
 // For demonstration, we use an in-memory array.
-export const mockTransactionsStore: Transaction[] = [
+const mockTransactionsStore: Transaction[] = [
   {
     id: 'txn_1P2gHh9jKlMnOpQrStUvWxYz',
     amount: 1500.00,
