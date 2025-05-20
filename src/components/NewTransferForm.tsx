@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, Smartphone, User, Mail, Send } from 'lucide-radix-select-primitive'; // Replaced lucide-react with specific primitive import
+import { DollarSign, Smartphone, User, Mail, Send } from 'lucide-react'; // Corrected import path
 import { initiateTransfer, InitiateTransferState } from '@/lib/actions';
 import { useFormState } from 'react-dom';
 import { useEffect, useRef } from 'react';
