@@ -1,3 +1,4 @@
+
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -15,7 +16,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, Smartphone, User, Mail, Send } from 'lucide-react'; // Corrected import path
+import { DollarSign, Smartphone, User, Mail, Send } from 'lucide-react';
 import { initiateTransfer, InitiateTransferState } from '@/lib/actions';
 import { useFormState } from 'react-dom';
 import { useEffect, useRef } from 'react';
@@ -40,7 +41,7 @@ export default function NewTransferForm() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      amount: undefined,
+      amount: '', // Changed from undefined to empty string
       recipientPhone: '',
       senderName: '',
       senderEmail: '',
