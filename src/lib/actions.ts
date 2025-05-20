@@ -1,3 +1,4 @@
+
 'use server';
 
 import { z } from 'zod';
@@ -17,7 +18,8 @@ const mockTransactionsStore: Transaction[] = [
     createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
     updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
     senderName: 'John Doe',
-    senderEmail: 'john.doe@example.com'
+    senderEmail: 'john.doe@example.com',
+    mpesaTransactionId: 'NAK876HYT1'
   },
   {
     id: 'txn_0P1fGe8iJkLmNoPqRsTuVwXy',
@@ -42,6 +44,27 @@ const mockTransactionsStore: Transaction[] = [
     senderEmail: 'alice.brown@example.com'
   },
 ];
+
+let globalTransactionCounter = 0; // Counter for sequential part of the ID
+
+function generateNewTransactionId(): string {
+  globalTransactionCounter++;
+  const counterString = String(globalTransactionCounter).padStart(7, '0');
+  // Generate 3 random uppercase letters for prefix
+  const P1 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+  const P2 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+  const P3 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+  return `${P1}${P2}${P3}${counterString}`; // e.g., RFA0000001
+}
+
+function generateMpesaConfirmationCode(): string {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 10; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result; // e.g., QWERTY123A
+}
 
 
 const kenyanPhoneNumberRegex = /^\+254\d{9}$/; // Example: +2547XXXXXXXX
@@ -86,8 +109,7 @@ export async function initiateTransfer(
   const { amount, recipientPhone, senderEmail, senderName } = validatedFields.data;
 
   try {
-    // Simulate creating a transaction ID
-    const transactionId = `txn_${Math.random().toString(36).substr(2, 9)}`;
+    const transactionId = generateNewTransactionId(); // Use new ID generation
     const now = new Date().toISOString();
 
     const newTransaction: Transaction = {
@@ -103,22 +125,10 @@ export async function initiateTransfer(
     };
     
     mockTransactionsStore.unshift(newTransaction); // Add to the beginning of the array
-
-    // Simulate Stripe payment initiation
-    // In a real app, you'd create a Stripe Checkout Session or Payment Intent here
-    // and redirect the user to Stripe's payment page.
-    // For this simulation, we'll directly set status to 'PAYMENT_SUCCESSFUL' after a short delay
-    // and then redirect to our own status page.
-
-    // This redirect will happen after the form submission.
-    // The actual redirect to Stripe would be handled by Stripe's SDK or a server response.
-    // For now, we prepare to redirect to our app's status page.
-    // The revalidatePath and redirect will be called by the component after this action returns.
     
     revalidatePath('/dashboard/transactions'); // Update transaction list
     revalidatePath('/dashboard'); // Update dashboard recent transactions
     
-    // This state will be used by the component to redirect
     return { message: 'Stripe payment pending...', transactionId };
 
   } catch (error) {
@@ -152,7 +162,7 @@ export async function updateTransactionStatus(id: string, status: Transaction['s
     mockTransactionsStore[transactionIndex].updatedAt = new Date().toISOString();
     
     if (status === 'COMPLETED') {
-      mockTransactionsStore[transactionIndex].mpesaTransactionId = `MPESA_${Math.random().toString(36).substr(2, 9)}`;
+      mockTransactionsStore[transactionIndex].mpesaTransactionId = generateMpesaConfirmationCode(); // Use new MPESA code generation
     }
     
     revalidatePath(`/dashboard/transfer/status/${id}`);
