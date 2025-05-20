@@ -2,48 +2,22 @@
 'use server';
 
 import { z } from 'zod';
-import { redirect } from 'next/navigation';
-import type { Transaction } from './types';
 import { revalidatePath } from 'next/cache';
-
-// In a real app, this would be a database or a persistent store.
-// For demonstration, we use an in-memory array.
-const mockTransactionsStore: Transaction[] = [
-  {
-    id: 'txn_1P2gHh9jKlMnOpQrStUvWxYz', // Keeping existing mock IDs as is, new ones will follow new format
-    amount: 1500.00,
-    currency: 'KES',
-    recipientPhone: '+254712345678',
-    status: 'COMPLETED',
-    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    senderName: 'John Doe',
-    senderEmail: 'john.doe@example.com',
-    mpesaTransactionId: 'NAK876HYT1'
-  },
-  {
-    id: 'txn_0P1fGe8iJkLmNoPqRsTuVwXy', // Keeping existing mock IDs as is
-    amount: 750.50,
-    currency: 'KES',
-    recipientPhone: '+254723456789',
-    status: 'PROCESSING_MPESA',
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-    senderName: 'Jane Smith',
-    senderEmail: 'jane.smith@example.com'
-  },
-  {
-    id: 'txn_3R4tYu6oPqRsTuVwXyZ1aBcD', // Keeping existing mock IDs as is
-    amount: 2500.00,
-    currency: 'KES',
-    recipientPhone: '+254734567890',
-    status: 'PENDING_STRIPE',
-    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    senderName: 'Alice Brown',
-    senderEmail: 'alice.brown@example.com'
-  },
-];
+import { db } from '@/lib/firebase'; // Using Firebase admin/ SDK for server-side
+import { 
+  collection, 
+  addDoc, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  query, 
+  where, 
+  updateDoc, 
+  orderBy, 
+  Timestamp,
+  serverTimestamp
+} from 'firebase/firestore';
+import type { Transaction, TransactionStatus } from './types';
 
 function generateRandomAlphanumeric(length: number): string {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -54,27 +28,17 @@ function generateRandomAlphanumeric(length: number): string {
   return result;
 }
 
-function generateNewTransactionId(): string {
-  let newId: string;
-  let isUnique = false;
-  do {
-    newId = generateRandomAlphanumeric(10);
-    // Check if this ID already exists in the store
-    if (!mockTransactionsStore.some(txn => txn.id === newId)) {
-      isUnique = true;
-    }
-  } while (!isUnique);
-  return newId; // e.g., AB1CD2EF3G
-}
-
+// This function is not strictly "collision-free" in a distributed system without checking the DB.
+// For Firestore, the document ID itself is unique. We'll use Firestore's auto-generated IDs.
+// This function can be used for MPESA confirmation codes.
 function generateMpesaConfirmationCode(): string {
-  return generateRandomAlphanumeric(10); // e.g., QWERTY123A
+  return generateRandomAlphanumeric(10);
 }
 
-
-const kenyanPhoneNumberRegex = /^\+254\d{9}$/; // Example: +2547XXXXXXXX
+const kenyanPhoneNumberRegex = /^\+254\d{9}$/;
 
 const TransferSchema = z.object({
+  userId: z.string().min(1, { message: 'User ID is required.'}),
   amount: z.coerce.number().positive({ message: 'Amount must be positive.' }).min(50, {message: 'Minimum amount is KES 50.'}),
   recipientPhone: z.string().regex(kenyanPhoneNumberRegex, { message: 'Invalid Kenyan phone number. Format: +254XXXXXXXXX' }),
   senderName: z.string().min(2, {message: 'Sender name must be at least 2 characters.'}),
@@ -84,6 +48,7 @@ const TransferSchema = z.object({
 export interface InitiateTransferState {
   message?: string | null;
   errors?: {
+    userId?: string[];
     amount?: string[];
     recipientPhone?: string[];
     senderName?: string[];
@@ -91,90 +56,163 @@ export interface InitiateTransferState {
     general?: string[];
   };
   transactionId?: string | null;
+  success?: boolean;
 }
 
 export async function initiateTransfer(
-  prevState: InitiateTransferState | undefined,
-  formData: FormData
+  data: z.infer<typeof TransferSchema>
 ): Promise<InitiateTransferState> {
-  const validatedFields = TransferSchema.safeParse({
-    amount: formData.get('amount'),
-    recipientPhone: formData.get('recipientPhone'),
-    senderName: formData.get('senderName'),
-    senderEmail: formData.get('senderEmail'),
-  });
+  const validatedFields = TransferSchema.safeParse(data);
 
   if (!validatedFields.success) {
     return {
       errors: validatedFields.error.flatten().fieldErrors,
       message: 'Validation failed. Please check your inputs.',
+      success: false,
     };
   }
 
-  const { amount, recipientPhone, senderEmail, senderName } = validatedFields.data;
+  const { userId, amount, recipientPhone, senderEmail, senderName } = validatedFields.data;
 
   try {
-    const transactionId = generateNewTransactionId(); // Use new ID generation
-    const now = new Date().toISOString();
-
-    const newTransaction: Transaction = {
-      id: transactionId,
+    const newTransactionData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: any, updatedAt: any } = {
+      userId,
       amount,
       currency: 'KES',
       recipientPhone,
       senderEmail,
       senderName,
-      status: 'PENDING_STRIPE', // Initial status
-      createdAt: now,
-      updatedAt: now,
+      status: 'PENDING_STRIPE',
+      createdAt: serverTimestamp(), // Use Firestore server timestamp
+      updatedAt: serverTimestamp(),
     };
     
-    mockTransactionsStore.unshift(newTransaction); // Add to the beginning of the array
+    const transactionsCollection = collection(db, 'transactions');
+    const docRef = await addDoc(transactionsCollection, newTransactionData);
     
-    revalidatePath('/dashboard/transactions'); // Update transaction list
-    revalidatePath('/dashboard'); // Update dashboard recent transactions
+    revalidatePath('/dashboard/transactions');
+    revalidatePath('/dashboard');
     
-    return { message: 'Stripe payment pending...', transactionId };
+    return { 
+      message: 'Stripe payment pending...', 
+      transactionId: docRef.id, 
+      success: true 
+    };
 
   } catch (error) {
     console.error('Transfer initiation failed:', error);
     return {
       message: 'An unexpected error occurred. Please try again.',
-      errors: { general: ['Transfer initiation failed.'] }
+      errors: { general: ['Transfer initiation failed.'] },
+      success: false,
     };
   }
 }
 
+export async function getTransactionById(userId: string, transactionId: string): Promise<Transaction | null> {
+  if (!userId || !transactionId) {
+    console.error('User ID and Transaction ID are required for getTransactionById');
+    return null;
+  }
+  try {
+    const transactionDocRef = doc(db, 'transactions', transactionId);
+    const transactionSnap = await getDoc(transactionDocRef);
 
-// Simulate fetching a transaction by ID
-export async function getTransactionById(id: string): Promise<Transaction | null> {
-  await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-  const transaction = mockTransactionsStore.find(txn => txn.id === id);
-  return transaction || null;
+    if (transactionSnap.exists()) {
+      const transactionData = transactionSnap.data() as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: Timestamp, updatedAt: Timestamp };
+      // Ensure the transaction belongs to the user
+      if (transactionData.userId !== userId) {
+        console.warn('User attempted to access unauthorized transaction.');
+        return null; 
+      }
+      return {
+        ...transactionData,
+        id: transactionSnap.id,
+        createdAt: transactionData.createdAt.toDate().toISOString(),
+        updatedAt: transactionData.updatedAt.toDate().toISOString(),
+      };
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error('Error fetching transaction by ID:', error);
+    return null;
+  }
 }
 
-// Simulate fetching all transactions
-export async function getAllTransactions(): Promise<Transaction[]> {
-  await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-  return [...mockTransactionsStore].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+export async function getAllTransactions(userId: string): Promise<Transaction[]> {
+   if (!userId) {
+    console.error('User ID is required for getAllTransactions');
+    return [];
+  }
+  try {
+    const transactionsCollection = collection(db, 'transactions');
+    const q = query(
+      transactionsCollection, 
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(docSnap => {
+      const data = docSnap.data() as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: Timestamp, updatedAt: Timestamp };
+      return {
+        ...data,
+        id: docSnap.id,
+        createdAt: data.createdAt.toDate().toISOString(),
+        updatedAt: data.updatedAt.toDate().toISOString(),
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching all transactions:', error);
+    return [];
+  }
 }
 
-// Simulate updating transaction status (e.g., after Stripe webhook or MPESA update)
-export async function updateTransactionStatus(id: string, status: Transaction['status']): Promise<Transaction | null> {
-  const transactionIndex = mockTransactionsStore.findIndex(txn => txn.id === id);
-  if (transactionIndex !== -1) {
-    mockTransactionsStore[transactionIndex].status = status;
-    mockTransactionsStore[transactionIndex].updatedAt = new Date().toISOString();
+export async function updateTransactionStatus(transactionId: string, status: TransactionStatus, userId?: string): Promise<Transaction | null> {
+  if (!transactionId) {
+    console.error('Transaction ID is required to update status.');
+    return null;
+  }
+  try {
+    const transactionDocRef = doc(db, 'transactions', transactionId);
+    
+    // Optional: Verify ownership if userId is provided (e.g. for client-side updates)
+    if (userId) {
+        const currentDoc = await getDoc(transactionDocRef);
+        if (!currentDoc.exists() || currentDoc.data()?.userId !== userId) {
+            console.warn('Attempt to update status of unauthorized or non-existent transaction.');
+            return null;
+        }
+    }
+
+    const updateData: Partial<Transaction> & { updatedAt: any } = {
+      status,
+      updatedAt: serverTimestamp(),
+    };
     
     if (status === 'COMPLETED') {
-      mockTransactionsStore[transactionIndex].mpesaTransactionId = generateMpesaConfirmationCode();
+      updateData.mpesaTransactionId = generateMpesaConfirmationCode();
     }
     
-    revalidatePath(`/dashboard/transfer/status/${id}`);
-    revalidatePath('/dashboard/transactions');
-    revalidatePath('/dashboard');
-    return mockTransactionsStore[transactionIndex];
+    await updateDoc(transactionDocRef, updateData);
+    
+    const updatedDocSnap = await getDoc(transactionDocRef);
+    if (updatedDocSnap.exists()) {
+      const data = updatedDocSnap.data() as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: Timestamp, updatedAt: Timestamp };
+      revalidatePath(`/dashboard/transfer/status/${transactionId}`);
+      revalidatePath('/dashboard/transactions');
+      revalidatePath('/dashboard');
+      return {
+        ...data,
+        id: updatedDocSnap.id,
+        createdAt: data.createdAt.toDate().toISOString(),
+        updatedAt: data.updatedAt.toDate().toISOString(),
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error updating transaction status:', error);
+    return null;
   }
-  return null;
 }
-

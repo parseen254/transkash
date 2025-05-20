@@ -1,17 +1,19 @@
+
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { getTransactionById, updateTransactionStatus } from '@/lib/actions';
 import type { Transaction } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle2, Clock, Loader2, XCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Clock, Loader2, XCircle, AlertCircle } from 'lucide-react';
 import MpesaLogo from '@/components/icons/MpesaLogo';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/context/AuthContext';
 
 const statusDetails: Record<Transaction['status'], { icon: React.ElementType; text: string; color: string; description: string }> = {
   PENDING_STRIPE: { icon: Clock, text: 'Pending Stripe Payment', color: 'text-yellow-500', description: 'Waiting for payment completion via Stripe.' },
@@ -30,26 +32,33 @@ function TransactionStatusContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchTransaction() {
-      if (!transactionId) return;
+      if (!transactionId || !user || authLoading) return;
       setLoading(true);
       setError(null);
       try {
-        const fetchedTransaction = await getTransactionById(transactionId);
+        // Pass user.uid to ensure user can only fetch their own transaction
+        const fetchedTransaction = await getTransactionById(user.uid, transactionId);
         if (fetchedTransaction) {
           setTransaction(fetchedTransaction);
-          // Simulate Stripe payment success if redirected from form
           if (searchParams.get('stripe_sim') === 'true' && fetchedTransaction.status === 'PENDING_STRIPE') {
+            // Simulate Stripe payment success -> calls updateTransactionStatus which now requires userId for client-side calls
+            // For now, we'll let the automatic useEffect below handle this simulation if status is PAYMENT_SUCCESSFUL.
+            // In a real app, Stripe webhooks would update this, or a client-side Stripe confirmation.
             setTimeout(async () => {
-              const updatedTxn = await updateTransactionStatus(transactionId, 'PAYMENT_SUCCESSFUL');
+              const updatedTxn = await updateTransactionStatus(transactionId, 'PAYMENT_SUCCESSFUL', user.uid);
               if (updatedTxn) setTransaction(updatedTxn);
               toast({ title: "Stripe Payment Processed", description: "Payment confirmed (simulated)." });
-            }, 2000); // Simulate Stripe processing time
+            }, 2000);
           }
         } else {
-          setError('Transaction not found.');
+          setError('Transaction not found or you do not have permission to view it.');
+          // Optional: redirect if not found/authorized after a delay or immediately
+          // setTimeout(() => router.push('/dashboard/transactions'), 3000);
         }
       } catch (e) {
         setError('Failed to load transaction details.');
@@ -59,36 +68,36 @@ function TransactionStatusContent() {
       }
     }
     fetchTransaction();
-  }, [transactionId, searchParams, toast]);
+  }, [transactionId, searchParams, toast, user, authLoading, router]);
 
-  // Simulate MPESA processing after Stripe payment is successful
+  // Simulate MPESA processing
   useEffect(() => {
-    if (transaction?.status === 'PAYMENT_SUCCESSFUL') {
-      const timer = setTimeout(async () => {
-        const updatedTxn = await updateTransactionStatus(transactionId, 'PROCESSING_MPESA');
+    if (!user || !transaction || !transactionId) return;
+
+    let timer: NodeJS.Timeout;
+    if (transaction.status === 'PAYMENT_SUCCESSFUL') {
+      timer = setTimeout(async () => {
+        const updatedTxn = await updateTransactionStatus(transactionId, 'PROCESSING_MPESA', user.uid);
         if (updatedTxn) setTransaction(updatedTxn);
-      }, 3000); // Simulate delay before MPESA processing starts
-      return () => clearTimeout(timer);
-    }
-    if (transaction?.status === 'PROCESSING_MPESA') {
-      const timer = setTimeout(async () => {
-        // Simulate random success/failure for MPESA
-        const isSuccess = Math.random() > 0.2; // 80% chance of success
+      }, 3000);
+    } else if (transaction.status === 'PROCESSING_MPESA') {
+      timer = setTimeout(async () => {
+        const isSuccess = Math.random() > 0.2;
         const newStatus = isSuccess ? 'COMPLETED' : 'FAILED_MPESA';
-        const updatedTxn = await updateTransactionStatus(transactionId, newStatus);
+        const updatedTxn = await updateTransactionStatus(transactionId, newStatus, user.uid);
          if (updatedTxn) setTransaction(updatedTxn);
         toast({
           title: `MPESA Transfer ${isSuccess ? 'Completed' : 'Failed'}`,
           description: `The MPESA transfer is now ${newStatus.toLowerCase()}. (simulated)`,
           variant: isSuccess ? 'default' : 'destructive',
         });
-      }, 5000); // Simulate MPESA processing time
-      return () => clearTimeout(timer);
+      }, 5000);
     }
-  }, [transaction?.status, transactionId, toast]);
+    return () => clearTimeout(timer);
+  }, [transaction?.status, transactionId, toast, user, transaction]);
 
 
-  if (loading) {
+  if (loading || authLoading) {
     return <StatusSkeleton />;
   }
 
@@ -102,8 +111,8 @@ function TransactionStatusContent() {
           <p>{error}</p>
         </CardContent>
         <CardFooter>
-          <Link href="/dashboard">
-            <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard</Button>
+          <Link href="/dashboard/transactions">
+            <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Transactions</Button>
           </Link>
         </CardFooter>
       </Card>
@@ -111,10 +120,11 @@ function TransactionStatusContent() {
   }
 
   if (!transaction) {
-    return <StatusSkeleton message="Transaction not found."/>;
+     // This case should ideally be covered by the error state if transaction isn't found
+    return <StatusSkeleton message="Transaction not found or unauthorized."/>;
   }
 
-  const currentStatusDetails = statusDetails[transaction.status] || statusDetails.CANCELED_STRIPE; // Fallback
+  const currentStatusDetails = statusDetails[transaction.status] || statusDetails.CANCELED_STRIPE;
   const StatusIcon = currentStatusDetails.icon;
 
   return (
@@ -133,8 +143,8 @@ function TransactionStatusContent() {
           <InfoRow label="Recipient:" value={transaction.recipientPhone} icon={<MpesaLogo className="h-5 w-auto inline mr-1" />} />
           {transaction.senderName && <InfoRow label="Sender Name:" value={transaction.senderName} />}
           {transaction.senderEmail && <InfoRow label="Sender Email:" value={transaction.senderEmail} />}
-          <InfoRow label="Date Initiated:" value={format(new Date(transaction.createdAt), 'MMM d, yyyy p')} />
-          <InfoRow label="Last Updated:" value={format(new Date(transaction.updatedAt), 'MMM d, yyyy p')} />
+          <InfoRow label="Date Initiated:" value={transaction.createdAt ? format(new Date(transaction.createdAt as string), 'MMM d, yyyy p') : 'N/A'} />
+          <InfoRow label="Last Updated:" value={transaction.updatedAt ? format(new Date(transaction.updatedAt as string), 'MMM d, yyyy p') : 'N/A'} />
         </div>
         {transaction.status === 'COMPLETED' && transaction.mpesaTransactionId && (
            <InfoRow label="MPESA Confirmation:" value={transaction.mpesaTransactionId} className="font-semibold text-green-600" />
@@ -181,7 +191,11 @@ function StatusSkeleton({ message = "Loading transaction details..."}: {message?
         <Skeleton className="h-4 w-full mx-auto mt-2" />
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="border-t border-b py-4 space-y-3">
+         <div className="border-t border-b py-4 text-center">
+          <p className="text-muted-foreground">{message}</p>
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mt-4" />
+        </div>
+        <div className="border-t border-b py-4 space-y-3 hidden"> {/* Hide info rows during generic skeleton */}
           {[...Array(5)].map((_, i) => (
             <div key={i} className="flex justify-between items-center text-sm">
               <Skeleton className="h-4 w-1/3" />
@@ -189,7 +203,7 @@ function StatusSkeleton({ message = "Loading transaction details..."}: {message?
             </div>
           ))}
         </div>
-         <Skeleton className="h-6 w-3/4 mx-auto" />
+         <Skeleton className="h-6 w-3/4 mx-auto hidden" />
       </CardContent>
       <CardFooter className="flex flex-col sm:flex-row justify-between items-center gap-2">
         <Skeleton className="h-10 w-36" />

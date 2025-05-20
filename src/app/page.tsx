@@ -1,10 +1,17 @@
+
+'use client'; // Make this a client component to use useAuth
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { APP_NAME, APP_DESCRIPTION } from '@/lib/constants';
 import AppLogo from '@/components/AppLogo';
 import Image from 'next/image';
+import { useAuth } from '@/context/AuthContext'; // Import useAuth
+import { LogIn, Loader2 } from 'lucide-react';
 
 export default function LandingPage() {
+  const { user, loading, signInWithGoogle } = useAuth();
+
   return (
     <div className="flex flex-col min-h-screen">
       <header className="px-4 lg:px-6 h-16 flex items-center border-b">
@@ -12,6 +19,23 @@ export default function LandingPage() {
           <AppLogo className="h-8 w-auto" />
           <span className="sr-only">{APP_NAME}</span>
         </Link>
+        <div className="ml-auto">
+          {loading ? (
+            <Button variant="outline" disabled>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading...
+            </Button>
+          ) : user ? (
+            <Link href="/dashboard">
+              <Button variant="outline">Go to Dashboard</Button>
+            </Link>
+          ) : (
+            <Button onClick={signInWithGoogle} variant="outline">
+              <LogIn className="mr-2 h-4 w-4" />
+              Sign in with Google
+            </Button>
+          )}
+        </div>
       </header>
       <main className="flex-1">
         <section className="w-full py-12 md:py-24 lg:py-32 xl:py-48 bg-gradient-to-br from-primary to-accent">
@@ -24,11 +48,22 @@ export default function LandingPage() {
                 {APP_DESCRIPTION} Pay via Stripe, receive via MPESA. Fast, secure, and reliable.
               </p>
               <div>
-                <Link href="/dashboard">
-                  <Button size="lg" variant="secondary" className="shadow-lg hover:shadow-xl transition-shadow">
-                    Get Started
+                {loading ? (
+                   <Button size="lg" variant="secondary" className="shadow-lg hover:shadow-xl transition-shadow" disabled>
+                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                     Loading...
+                   </Button>
+                ) : user ? (
+                  <Link href="/dashboard">
+                    <Button size="lg" variant="secondary" className="shadow-lg hover:shadow-xl transition-shadow">
+                      Go to Dashboard
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button size="lg" variant="secondary" className="shadow-lg hover:shadow-xl transition-shadow" onClick={signInWithGoogle}>
+                     <LogIn className="mr-2 h-5 w-5" /> Get Started / Sign In
                   </Button>
-                </Link>
+                )}
               </div>
             </div>
           </div>
@@ -57,6 +92,10 @@ export default function LandingPage() {
                   <li className="flex items-center">
                     <CheckIcon className="mr-2 h-5 w-5 text-primary" />
                     Transparent Transaction Tracking
+                  </li>
+                   <li className="flex items-center">
+                    <CheckIcon className="mr-2 h-5 w-5 text-primary" />
+                    Google Sign-In for Easy Access
                   </li>
                 </ul>
               </div>

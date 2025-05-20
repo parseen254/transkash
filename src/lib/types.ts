@@ -1,3 +1,4 @@
+
 export type TransactionStatus = 
   | 'PENDING_STRIPE' 
   | 'PROCESSING_MPESA' 
@@ -7,15 +8,16 @@ export type TransactionStatus =
   | 'PAYMENT_SUCCESSFUL'; // Added after Stripe payment, before MPESA
 
 export interface Transaction {
-  id: string;
+  id: string; // Firestore document ID
+  userId: string; // Firebase Auth User ID
   amount: number;
   currency: 'KES'; // Assuming KES for now
   recipientPhone: string;
   status: TransactionStatus;
-  createdAt: string; // ISO date string
-  updatedAt: string; // ISO date string
+  createdAt: string | any; // ISO date string or Firebase Timestamp for new docs
+  updatedAt: string | any; // ISO date string or Firebase Timestamp
   stripePaymentIntentId?: string;
   mpesaTransactionId?: string;
-  senderName?: string; // Optional: if collected
-  senderEmail?: string; // Optional: if collected for Stripe
+  senderName?: string;
+  senderEmail?: string; 
 }

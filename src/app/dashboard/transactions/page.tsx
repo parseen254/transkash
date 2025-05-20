@@ -11,9 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { ListFilter, Search, PlusCircle, ArrowRightLeft, CalendarDays, Smartphone, PoundSterling, CheckCircle2, Clock, Loader2, XCircle, AlertCircle } from 'lucide-react';
+import { ListFilter, Search, PlusCircle, Smartphone, PoundSterling, CheckCircle2, Clock, Loader2, XCircle, AlertCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
+import { useAuth } from '@/context/AuthContext';
 
 const statusIcons: Record<Transaction['status'], React.ElementType> = {
   PENDING_STRIPE: Clock,
@@ -49,16 +50,18 @@ export default function TransactionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
     async function fetchTransactions() {
+      if (!user || authLoading) return; // Wait for user to be loaded
       setLoading(true);
-      const fetchedTransactions = await getAllTransactions();
+      const fetchedTransactions = await getAllTransactions(user.uid);
       setTransactions(fetchedTransactions);
       setLoading(false);
     }
     fetchTransactions();
-  }, []);
+  }, [user, authLoading]);
 
   const filteredTransactions = transactions
     .filter(txn => 
@@ -73,6 +76,40 @@ export default function TransactionsPage() {
   const handleRowClick = (transactionId: string) => {
     router.push(`/dashboard/transfer/status/${transactionId}`);
   };
+  
+  if (authLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <Skeleton className="h-10 w-1/3" />
+          <Skeleton className="h-10 w-36" />
+        </div>
+        <div className="flex flex-col md:flex-row gap-4 p-4 border rounded-lg bg-card shadow-sm">
+          <Skeleton className="h-10 flex-1" />
+          <Skeleton className="h-10 w-48" />
+        </div>
+        <div className="rounded-lg border bg-card shadow-sm">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[150px] hidden md:table-cell">Transaction ID</TableHead>
+                <TableHead>Sender</TableHead>
+                <TableHead>Recipient</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right hidden sm:table-cell">Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...Array(5)].map((_, i) => (
+                <TableRowSkeleton key={i} />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -120,12 +157,12 @@ export default function TransactionsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[150px]">ID</TableHead>
+                <TableHead className="w-[150px] hidden md:table-cell">Transaction ID</TableHead>
                 <TableHead>Sender</TableHead>
                 <TableHead>Recipient</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Date</TableHead>
+                <TableHead className="text-right hidden sm:table-cell">Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -170,7 +207,7 @@ export default function TransactionsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                         <div className="flex items-center justify-end">
-                           <PoundSterling className="mr-1 h-4 w-4 text-muted-foreground" /> 
+                           { /* <PoundSterling className="mr-1 h-4 w-4 text-muted-foreground" /> */ }
                            {txn.amount.toFixed(2)} {txn.currency}
                         </div>
                     </TableCell>
@@ -181,7 +218,7 @@ export default function TransactionsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right hidden sm:table-cell">
-                      {format(new Date(txn.createdAt), 'PPp')}
+                      {txn.createdAt ? format(new Date(txn.createdAt as string), 'PPp') : 'N/A'}
                     </TableCell>
                   </TableRow>
                 );
@@ -216,4 +253,3 @@ function TableRowSkeleton() {
     </TableRow>
   )
 }
-
