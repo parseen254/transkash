@@ -3,22 +3,23 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase'; 
-import { 
-  collection, 
-  addDoc, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  query, 
-  where, 
-  updateDoc, 
-  orderBy, 
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  addDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  updateDoc,
+  orderBy,
   Timestamp,
   serverTimestamp,
-  setDoc
+  setDoc,
+  deleteDoc,
 } from 'firebase/firestore';
-import type { Transaction, TransactionStatus, UserSettings } from './types';
+import type { Transaction, TransactionStatus, UserSettings, ApiKeyEntry } from './types';
 
 function generateRandomAlphanumeric(length: number): string {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -84,20 +85,20 @@ export async function initiateTransfer(
       senderEmail,
       senderName,
       status: 'PENDING_STRIPE',
-      createdAt: serverTimestamp(), 
+      createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
-    
+
     const transactionsCollection = collection(db, 'transactions');
     const docRef = await addDoc(transactionsCollection, newTransactionData);
-    
+
     revalidatePath('/dashboard/transactions');
     revalidatePath('/dashboard');
-    
-    return { 
-      message: 'Stripe payment pending...', 
-      transactionId: docRef.id, 
-      success: true 
+
+    return {
+      message: 'Stripe payment pending...',
+      transactionId: docRef.id,
+      success: true
     };
 
   } catch (error) {
@@ -123,7 +124,7 @@ export async function getTransactionById(userId: string, transactionId: string):
       const transactionData = transactionSnap.data() as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: Timestamp, updatedAt: Timestamp };
       if (transactionData.userId !== userId) {
         console.warn('User attempted to access unauthorized transaction.');
-        return null; 
+        return null;
       }
       return {
         ...transactionData,
@@ -148,12 +149,12 @@ export async function getAllTransactions(userId: string): Promise<Transaction[]>
   try {
     const transactionsCollection = collection(db, 'transactions');
     const q = query(
-      transactionsCollection, 
+      transactionsCollection,
       where('userId', '==', userId),
       orderBy('createdAt', 'desc')
     );
     const querySnapshot = await getDocs(q);
-    
+
     return querySnapshot.docs.map(docSnap => {
       const data = docSnap.data() as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: Timestamp, updatedAt: Timestamp };
       return {
@@ -176,7 +177,7 @@ export async function updateTransactionStatus(transactionId: string, status: Tra
   }
   try {
     const transactionDocRef = doc(db, 'transactions', transactionId);
-    
+
     if (userId) {
         const currentDoc = await getDoc(transactionDocRef);
         if (!currentDoc.exists() || currentDoc.data()?.userId !== userId) {
@@ -189,13 +190,13 @@ export async function updateTransactionStatus(transactionId: string, status: Tra
       status,
       updatedAt: serverTimestamp(),
     };
-    
+
     if (status === 'COMPLETED') {
       updateData.mpesaTransactionId = generateMpesaConfirmationCode();
     }
-    
+
     await updateDoc(transactionDocRef, updateData);
-    
+
     const updatedDocSnap = await getDoc(transactionDocRef);
     if (updatedDocSnap.exists()) {
       const data = updatedDocSnap.data() as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: Timestamp, updatedAt: Timestamp };
@@ -252,10 +253,81 @@ export async function updateUserSettings(userId: string, settings: Partial<UserS
   try {
     const settingsDocRef = doc(db, 'userSettings', userId);
     await setDoc(settingsDocRef, settings, { merge: true }); // Use setDoc with merge to create if not exists or update
-    revalidatePath('/dashboard/settings'); // Revalidate if needed, though settings are usually client-side dynamic
+    revalidatePath('/dashboard/settings');
     return { success: true, message: 'Settings updated successfully.' };
   } catch (error) {
     console.error('Error updating user settings:', error);
     return { success: false, message: 'Failed to update settings.' };
+  }
+}
+
+// API Key Management Actions
+
+export async function addApiKey(userId: string, serviceName: string, keyValue: string): Promise<{ success: boolean; message?: string, apiKeyId?: string }> {
+  if (!userId || !serviceName || !keyValue) {
+    return { success: false, message: 'User ID, service name, and key value are required.' };
+  }
+  try {
+    const apiKeysCollection = collection(db, 'apiKeys');
+    const newApiKeyData: Omit<ApiKeyEntry, 'id' | 'createdAt'> & { createdAt: any } = {
+      userId,
+      serviceName,
+      keyValue, // Key is stored directly; consider encryption for production
+      createdAt: serverTimestamp(),
+    };
+    const docRef = await addDoc(apiKeysCollection, newApiKeyData);
+    revalidatePath('/dashboard/settings');
+    return { success: true, message: 'API Key added successfully.', apiKeyId: docRef.id };
+  } catch (error) {
+    console.error('Error adding API key:', error);
+    return { success: false, message: 'Failed to add API key.' };
+  }
+}
+
+export async function getUserApiKeys(userId: string): Promise<ApiKeyEntry[]> {
+  if (!userId) {
+    console.error('User ID is required to get API keys.');
+    return [];
+  }
+  try {
+    const apiKeysCollection = collection(db, 'apiKeys');
+    const q = query(
+      apiKeysCollection,
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(docSnap => {
+      const data = docSnap.data() as Omit<ApiKeyEntry, 'id' | 'createdAt'> & { createdAt: Timestamp };
+      return {
+        ...data,
+        id: docSnap.id,
+        createdAt: data.createdAt.toDate().toISOString(),
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching API keys:', error);
+    return [];
+  }
+}
+
+export async function deleteApiKey(userId: string, apiKeyId: string): Promise<{ success: boolean; message?: string }> {
+  if (!userId || !apiKeyId) {
+    return { success: false, message: 'User ID and API Key ID are required.' };
+  }
+  try {
+    const apiKeyDocRef = doc(db, 'apiKeys', apiKeyId);
+    const docSnap = await getDoc(apiKeyDocRef);
+
+    if (!docSnap.exists() || docSnap.data()?.userId !== userId) {
+      return { success: false, message: 'API Key not found or unauthorized.' };
+    }
+
+    await deleteDoc(apiKeyDocRef);
+    revalidatePath('/dashboard/settings');
+    return { success: true, message: 'API Key deleted successfully.' };
+  } catch (error) {
+    console.error('Error deleting API key:', error);
+    return { success: false, message: 'Failed to delete API key.' };
   }
 }

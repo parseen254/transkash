@@ -2,29 +2,45 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { updateProfile } from 'firebase/auth';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Settings, User, Bell, Palette, KeyRound, Save, Loader2 } from "lucide-react";
+import { Settings, User, Bell, Palette, KeyRound, Save, Loader2, PlusCircle, Trash2, AlertTriangle } from "lucide-react";
 import { useTheme } from '@/context/ThemeProvider';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/context/AuthContext';
-import type { UserSettings } from '@/lib/types';
-import { getUserSettings, updateUserSettings } from '@/lib/actions';
+import type { UserSettings, ApiKeyEntry } from '@/lib/types';
+import { getUserSettings, updateUserSettings, addApiKey, getUserApiKeys, deleteApiKey } from '@/lib/actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const profileFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters.").max(50, "Name must be less than 50 characters."),
 });
-
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
+
+const apiKeyFormSchema = z.object({
+  serviceName: z.string().min(2, "Service name is required.").max(50, "Service name too long."),
+  keyValue: z.string().min(10, "API Key must be at least 10 characters.").max(256, "API Key too long."),
+});
+type ApiKeyFormValues = z.infer<typeof apiKeyFormSchema>;
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
@@ -37,6 +53,12 @@ export default function SettingsPage() {
   const [profileUpdating, setProfileUpdating] = useState(false);
   const [notificationsUpdating, setNotificationsUpdating] = useState(false);
 
+  const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
+  const [apiKeysLoading, setApiKeysLoading] = useState(true);
+  const [apiKeySubmitting, setApiKeySubmitting] = useState(false);
+  const [apiKeyToDelete, setApiKeyToDelete] = useState<string | null>(null);
+
+
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
@@ -44,18 +66,31 @@ export default function SettingsPage() {
     },
   });
 
+  const apiKeyForm = useForm<ApiKeyFormValues>({
+    resolver: zodResolver(apiKeyFormSchema),
+    defaultValues: {
+      serviceName: '',
+      keyValue: '',
+    },
+  });
+
   useEffect(() => {
     setIsMounted(true);
     if (user) {
       profileForm.reset({ name: user.displayName || '' });
-      
-      const fetchSettings = async () => {
+
+      const fetchInitialData = async () => {
         setSettingsLoading(true);
+        setApiKeysLoading(true);
         const settings = await getUserSettings(user.uid);
         setUserSettings(settings);
         setSettingsLoading(false);
+
+        const keys = await getUserApiKeys(user.uid);
+        setApiKeys(keys);
+        setApiKeysLoading(false);
       };
-      fetchSettings();
+      fetchInitialData();
     }
   }, [user, profileForm]);
 
@@ -67,13 +102,15 @@ export default function SettingsPage() {
     setProfileUpdating(true);
     try {
       await updateProfile(user, { displayName: data.name });
+      // Re-fetch user or update context if your AuthContext doesn't auto-update displayName on `updateProfile`
+      // Forcing a reload or specific user update might be needed for immediate reflection across the app.
+      // For now, we assume AuthContext handles this or a page refresh would show it.
+      setUserSettings(prev => prev ? {...prev} : null); // Trigger re-render if needed for other components listening to user object
       toast({
         title: "Profile Updated",
         description: `Display name changed to ${data.name}.`,
       });
-      // Manually trigger re-render of components using user.displayName if needed,
-      // or rely on AuthContext to eventually update. For immediate effect:
-      profileForm.reset({ name: data.name }); 
+      profileForm.reset({ name: data.name });
     } catch (error) {
       console.error("Profile update error:", error);
       toast({ title: "Update Failed", description: "Could not update your display name.", variant: "destructive" });
@@ -86,10 +123,10 @@ export default function SettingsPage() {
     if (!user || !userSettings) return;
     setNotificationsUpdating(true);
     const newSettings = { ...userSettings, [type]: checked };
-    
+
     const result = await updateUserSettings(user.uid, { [type]: checked });
     if (result.success) {
-      setUserSettings(newSettings); // Optimistic update or re-fetch
+      setUserSettings(newSettings);
       toast({
         title: "Notification Settings Updated",
         description: `${type === 'emailNotifications' ? 'Email' : 'SMS'} notifications ${checked ? 'enabled' : 'disabled'}.`,
@@ -100,8 +137,48 @@ export default function SettingsPage() {
     setNotificationsUpdating(false);
   };
 
+  const onApiKeySubmit = async (data: ApiKeyFormValues) => {
+    if (!user) return;
+    setApiKeySubmitting(true);
+    const result = await addApiKey(user.uid, data.serviceName, data.keyValue);
+    if (result.success && result.apiKeyId) {
+      const newKey: ApiKeyEntry = {
+        id: result.apiKeyId,
+        userId: user.uid,
+        serviceName: data.serviceName,
+        keyValue: data.keyValue, // Store full key, but mask in UI
+        createdAt: new Date().toISOString(), // Client-side approx for optimistic update
+      };
+      setApiKeys(prev => [newKey, ...prev].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      toast({ title: "API Key Added", description: `Key for ${data.serviceName} added successfully.` });
+      apiKeyForm.reset();
+    } else {
+      toast({ title: "Failed to Add API Key", description: result.message || "An error occurred.", variant: "destructive" });
+    }
+    setApiKeySubmitting(false);
+  };
+
+  const handleDeleteApiKey = async () => {
+    if (!user || !apiKeyToDelete) return;
+    const keyId = apiKeyToDelete;
+    setApiKeyToDelete(null); // Close dialog
+
+    const result = await deleteApiKey(user.uid, keyId);
+    if (result.success) {
+      setApiKeys(prev => prev.filter(key => key.id !== keyId));
+      toast({ title: "API Key Deleted", description: result.message });
+    } else {
+      toast({ title: "Failed to Delete API Key", description: result.message || "An error occurred.", variant: "destructive" });
+    }
+  };
+
+  const maskApiKey = (key: string) => {
+    if (key.length <= 8) return '****';
+    return `${key.substring(0, 4)}****${key.substring(key.length - 4)}`;
+  };
+
+
   if (!isMounted || authLoading) {
-    // Avoid hydration mismatch for theme toggle and wait for auth
     return (
       <div className="space-y-8">
         <Skeleton className="h-10 w-1/3 mb-8" />
@@ -179,7 +256,7 @@ export default function SettingsPage() {
                 </FormControl>
                 <FormDescription>Your email address is used for login and cannot be changed here.</FormDescription>
               </FormItem>
-              <Button type="submit" className="shadow-md hover:shadow-lg" disabled={profileUpdating}>
+              <Button type="submit" className="shadow-md hover:shadow-lg" disabled={profileUpdating || authLoading}>
                 {profileUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 {profileUpdating ? 'Saving...' : 'Save Profile'}
               </Button>
@@ -238,14 +315,106 @@ export default function SettingsPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center"><KeyRound className="mr-2 h-5 w-5 text-primary" /> API Key Management</CardTitle>
-          <CardDescription>Manage API keys for third-party service integrations.</CardDescription>
+          <CardDescription>Manage API keys for external services. Ensure your Firestore Security Rules are properly configured.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">
-            Securely managing API keys typically requires a dedicated backend service. For security reasons, direct client-side management of sensitive keys like Stripe or Daraja API keys is not implemented here.
-          </p>
+          <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-md mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <AlertTriangle className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">Security Warning</h3>
+                <div className="mt-2 text-sm text-yellow-700">
+                  <p>API keys grant access to external services. Handle them with extreme care. Never share secret keys. This interface is for managing keys this application might use on your behalf (e.g., for server-to-server integrations). For highly sensitive keys like payment processor secret keys, a backend-managed vault is recommended.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Form {...apiKeyForm}>
+            <form onSubmit={apiKeyForm.handleSubmit(onApiKeySubmit)} className="space-y-4 mb-6 p-4 border rounded-lg">
+              <h3 className="text-lg font-medium">Add New API Key</h3>
+              <FormField
+                control={apiKeyForm.control}
+                name="serviceName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Service Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., My Analytics Service" {...field} />
+                    </FormControl>
+                    <FormDescription>A recognizable name for this API key.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={apiKeyForm.control}
+                name="keyValue"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>API Key Value</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="Enter the API key" {...field} />
+                    </FormControl>
+                    <FormDescription>The actual API key. It will be stored securely.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" disabled={apiKeySubmitting || authLoading}>
+                {apiKeySubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+                {apiKeySubmitting ? "Adding..." : "Add API Key"}
+              </Button>
+            </form>
+          </Form>
+
+          <h3 className="text-lg font-medium mb-2">Your API Keys</h3>
+          {apiKeysLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : apiKeys.length > 0 ? (
+            <div className="space-y-2">
+              {apiKeys.map((key) => (
+                <div key={key.id} className="flex items-center justify-between p-3 border rounded-md">
+                  <div>
+                    <p className="font-medium">{key.serviceName}</p>
+                    <p className="text-sm text-muted-foreground">Key: {maskApiKey(key.keyValue)}</p>
+                    <p className="text-xs text-muted-foreground">Added: {new Date(key.createdAt).toLocaleDateString()}</p>
+                  </div>
+                  <AlertDialogTrigger asChild>
+                     <Button variant="ghost" size="icon" onClick={() => setApiKeyToDelete(key.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                  </AlertDialogTrigger>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground">No API keys added yet.</p>
+          )}
         </CardContent>
       </Card>
+       <AlertDialog open={!!apiKeyToDelete} onOpenChange={(open) => !open && setApiKeyToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the API key
+                for "{apiKeys.find(k => k.id === apiKeyToDelete)?.serviceName}".
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setApiKeyToDelete(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteApiKey} className="bg-destructive hover:bg-destructive/90">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
     </div>
   );
 }
