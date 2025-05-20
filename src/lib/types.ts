@@ -25,14 +25,9 @@ export interface Transaction {
 export interface UserSettings {
   emailNotifications: boolean;
   smsNotifications: boolean;
+  stripeApiKey?: string; // Added Stripe API Key
+  darajaApiKey?: string; // Added Daraja API Key
   // Future settings can be added here, e.g., preferredCurrency?: string;
 }
 
-export interface ApiKeyEntry {
-  id: string; // Firestore document ID
-  userId: string;
-  serviceName: string;
-  keyValue: string; // This will be the actual API key
-  createdAt: string | any; // Timestamp
-  // Add any other relevant fields, e.g., lastUsed, keyType
-}
+// ApiKeyEntry interface is removed as it's no longer needed for the simplified approach

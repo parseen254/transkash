@@ -2,61 +2,48 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { updateProfile } from 'firebase/auth';
+import { updateProfile } from 'firebase/auth'; // Assuming auth is still needed for profile
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Settings, User, Bell, Palette, KeyRound, Save, Loader2, PlusCircle, Trash2, AlertTriangle } from "lucide-react";
+import { Settings, User, Bell, Palette, KeyRound, Save, Loader2, AlertTriangle } from "lucide-react";
 import { useTheme } from '@/context/ThemeProvider';
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from '@/context/AuthContext';
-import type { UserSettings, ApiKeyEntry } from '@/lib/types';
-import { getUserSettings, updateUserSettings, addApiKey, getUserApiKeys, deleteApiKey } from '@/lib/actions';
+import { useAuth } from '@/context/AuthContext'; // auth object itself is not directly used here, but useAuth() is
+import type { UserSettings } from '@/lib/types';
+import { getUserSettings, updateUserSettings } from '@/lib/actions';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+// AlertDialog and related imports are removed as generic API key deletion is removed
 
 const profileFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters.").max(50, "Name must be less than 50 characters."),
 });
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
-const apiKeyFormSchema = z.object({
-  serviceName: z.string().min(2, "Service name is required.").max(50, "Service name too long."),
-  keyValue: z.string().min(10, "API Key must be at least 10 characters.").max(256, "API Key too long."),
+const paymentKeysFormSchema = z.object({
+  stripeApiKey: z.string().optional().or(z.literal('')), // Allow empty string to clear
+  darajaApiKey: z.string().optional().or(z.literal('')), // Allow empty string to clear
 });
-type ApiKeyFormValues = z.infer<typeof apiKeyFormSchema>;
+type PaymentKeysFormValues = z.infer<typeof paymentKeysFormSchema>;
+
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
-  const { user, loading: authLoading } = useAuth();
+  const { user, auth, loading: authLoading } = useAuth(); // auth from useAuth() for updateProfile
 
   const [isMounted, setIsMounted] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [profileUpdating, setProfileUpdating] = useState(false);
   const [notificationsUpdating, setNotificationsUpdating] = useState(false);
-
-  const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
-  const [apiKeysLoading, setApiKeysLoading] = useState(true);
-  const [apiKeySubmitting, setApiKeySubmitting] = useState(false);
-  const [apiKeyToDelete, setApiKeyToDelete] = useState<string | null>(null);
+  const [paymentKeysUpdating, setPaymentKeysUpdating] = useState(false);
 
 
   const profileForm = useForm<ProfileFormValues>({
@@ -66,11 +53,11 @@ export default function SettingsPage() {
     },
   });
 
-  const apiKeyForm = useForm<ApiKeyFormValues>({
-    resolver: zodResolver(apiKeyFormSchema),
+  const paymentKeysForm = useForm<PaymentKeysFormValues>({
+    resolver: zodResolver(paymentKeysFormSchema),
     defaultValues: {
-      serviceName: '',
-      keyValue: '',
+      stripeApiKey: '',
+      darajaApiKey: '',
     },
   });
 
@@ -81,45 +68,36 @@ export default function SettingsPage() {
 
       const fetchInitialData = async () => {
         setSettingsLoading(true);
-        setApiKeysLoading(true);
         try {
           const settings = await getUserSettings(user.uid);
           setUserSettings(settings);
+          paymentKeysForm.reset({
+            stripeApiKey: settings.stripeApiKey || '',
+            darajaApiKey: settings.darajaApiKey || '',
+          });
         } catch (e) {
           console.error("Failed to load user settings", e);
           toast({title: "Error", description: "Could not load user settings.", variant: "destructive"})
         } finally {
           setSettingsLoading(false);
         }
-        
-        try {
-          const keys = await getUserApiKeys(user.uid);
-          setApiKeys(keys);
-        } catch (e) {
-          console.error("Failed to load API keys", e);
-           toast({title: "Error", description: "Could not load API keys.", variant: "destructive"})
-        } finally {
-          setApiKeysLoading(false);
-        }
       };
       fetchInitialData();
     }
-  }, [user, profileForm, toast]);
+  }, [user, profileForm, paymentKeysForm, toast]);
 
   const onProfileSubmit = async (data: ProfileFormValues) => {
-    if (!user || !auth.currentUser) { // auth.currentUser for direct updateProfile
+    if (!user || !auth?.currentUser) { 
       toast({ title: "Error", description: "You must be signed in to update your profile.", variant: "destructive" });
       return;
     }
     setProfileUpdating(true);
     try {
       await updateProfile(auth.currentUser, { displayName: data.name });
-      // AuthContext should pick up the change via onAuthStateChanged, or you can manually update user in context
       toast({
         title: "Profile Updated",
         description: `Display name changed to ${data.name}.`,
       });
-      // Optionally, force re-fetch of user in AuthContext if not auto-updating displayName
     } catch (error) {
       console.error("Profile update error:", error);
       toast({ title: "Update Failed", description: "Could not update your display name.", variant: "destructive" });
@@ -128,10 +106,9 @@ export default function SettingsPage() {
     }
   };
 
-  const handleNotificationChange = async (type: keyof Omit<UserSettings, 'userId'>, checked: boolean) => {
+  const handleNotificationChange = async (type: 'emailNotifications' | 'smsNotifications', checked: boolean) => {
     if (!user || !userSettings) return;
     setNotificationsUpdating(true);
-    // Optimistically update UI
     const oldSettings = {...userSettings};
     setUserSettings(prev => prev ? {...prev, [type]: checked} : null);
 
@@ -142,56 +119,39 @@ export default function SettingsPage() {
         description: `${type === 'emailNotifications' ? 'Email' : 'SMS'} notifications ${checked ? 'enabled' : 'disabled'}.`,
       });
     } else {
-      // Revert optimistic update on failure
       setUserSettings(oldSettings);
       toast({ title: "Update Failed", description: result.message || "Could not update notification settings.", variant: "destructive"});
     }
     setNotificationsUpdating(false);
   };
 
-  const onApiKeySubmit = async (data: ApiKeyFormValues) => {
+  const onPaymentKeysSubmit = async (data: PaymentKeysFormValues) => {
     if (!user) return;
-    setApiKeySubmitting(true);
-    const result = await addApiKey(user.uid, data.serviceName, data.keyValue);
-    if (result.success && result.apiKeyId) {
-      const newKey: ApiKeyEntry = {
-        id: result.apiKeyId,
-        userId: user.uid,
-        serviceName: data.serviceName,
-        keyValue: data.keyValue, 
-        createdAt: new Date().toISOString(), 
-      };
-      setApiKeys(prev => [newKey, ...prev].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-      toast({ title: "API Key Added", description: `Key for ${data.serviceName} added successfully.` });
-      apiKeyForm.reset();
-    } else {
-      toast({ title: "Failed to Add API Key", description: result.message || "An error occurred.", variant: "destructive" });
-    }
-    setApiKeySubmitting(false);
-  };
+    setPaymentKeysUpdating(true);
+    
+    const settingsToUpdate: Partial<UserSettings> = {
+      stripeApiKey: data.stripeApiKey || '', // Send empty string if user clears it
+      darajaApiKey: data.darajaApiKey || '', // Send empty string if user clears it
+    };
 
-  const handleDeleteApiKey = async () => {
-    if (!user || !apiKeyToDelete) return;
-    const keyId = apiKeyToDelete;
-    setApiKeyToDelete(null); 
-
-    const result = await deleteApiKey(user.uid, keyId);
+    const result = await updateUserSettings(user.uid, settingsToUpdate);
     if (result.success) {
-      setApiKeys(prev => prev.filter(key => key.id !== keyId));
-      toast({ title: "API Key Deleted", description: result.message });
+      toast({ title: "API Keys Updated", description: "Your payment gateway API keys have been saved." });
+      setUserSettings(prev => ({...(prev || defaultUserSettings), ...settingsToUpdate}));
     } else {
-      toast({ title: "Failed to Delete API Key", description: result.message || "An error occurred.", variant: "destructive" });
+      toast({ title: "Update Failed", description: result.message || "Could not update API keys.", variant: "destructive" });
     }
+    setPaymentKeysUpdating(false);
   };
-
-  const maskApiKey = (key: string) => {
-    if(!key) return '****';
-    if (key.length <= 8) return '****';
+  
+  const maskApiKey = (key?: string) => {
+    if(!key || key.length === 0) return 'Not Set';
+    if (key.length <= 8) return '********';
     return `${key.substring(0, 4)}****${key.substring(key.length - 4)}`;
   };
 
 
-  if (!isMounted || authLoading || !user) { // Ensure user is loaded before rendering form dependent on user data
+  if (!isMounted || authLoading || !user) {
     return (
       <div className="space-y-8">
         <Skeleton className="h-10 w-1/3 mb-8" />
@@ -203,6 +163,7 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
               <Skeleton className="h-10 w-full" />
+              { i === 3 && <Skeleton className="h-10 w-full mt-2" /> /* For API keys card */}
             </CardContent>
           </Card>
         ))}
@@ -327,8 +288,8 @@ export default function SettingsPage() {
 
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="flex items-center"><KeyRound className="mr-2 h-5 w-5 text-primary" /> API Key Management</CardTitle>
-          <CardDescription>Manage API keys for external services. Ensure your Firestore Security Rules are properly configured.</CardDescription>
+          <CardTitle className="flex items-center"><KeyRound className="mr-2 h-5 w-5 text-primary" /> Payment Gateway API Keys</CardTitle>
+          <CardDescription>Manage your Stripe and Daraja API keys. Ensure your Firestore Security Rules are properly configured.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-md mb-6">
@@ -339,95 +300,61 @@ export default function SettingsPage() {
               <div className="ml-3">
                 <h3 className="text-sm font-medium text-yellow-800">Security Warning</h3>
                 <div className="mt-2 text-sm text-yellow-700">
-                  <p>API keys grant access to external services. Handle them with extreme care. Never share secret keys. This interface is for managing keys this application might use on your behalf (e.g., for server-to-server integrations). For highly sensitive keys like payment processor secret keys, a backend-managed vault is recommended.</p>
+                  <p>API keys grant access to external services and financial transactions. Handle them with extreme care. Never share secret keys. For production, consider using a backend-managed vault for these keys.</p>
                 </div>
               </div>
             </div>
           </div>
-
-          <Form {...apiKeyForm}>
-            <form onSubmit={apiKeyForm.handleSubmit(onApiKeySubmit)} className="space-y-4 mb-6 p-4 border rounded-lg">
-              <h3 className="text-lg font-medium">Add New API Key</h3>
-              <FormField
-                control={apiKeyForm.control}
-                name="serviceName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Service Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., My Analytics Service" {...field} />
-                    </FormControl>
-                    <FormDescription>A recognizable name for this API key.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={apiKeyForm.control}
-                name="keyValue"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>API Key Value</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="Enter the API key" {...field} />
-                    </FormControl>
-                    <FormDescription>The actual API key. It will be stored securely.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" disabled={apiKeySubmitting || authLoading}>
-                {apiKeySubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
-                {apiKeySubmitting ? "Adding..." : "Add API Key"}
-              </Button>
-            </form>
-          </Form>
-
-          <h3 className="text-lg font-medium mb-2">Your API Keys</h3>
-          {apiKeysLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-            </div>
-          ) : apiKeys.length > 0 ? (
-            <div className="space-y-2">
-              {apiKeys.map((key) => (
-                <div key={key.id} className="flex items-center justify-between p-3 border rounded-md">
-                  <div>
-                    <p className="font-medium">{key.serviceName}</p>
-                    <p className="text-sm text-muted-foreground">Key: {maskApiKey(key.keyValue)}</p>
-                    <p className="text-xs text-muted-foreground">Added: {new Date(key.createdAt).toLocaleDateString()}</p>
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => setApiKeyToDelete(key.id)}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-              ))}
+          {settingsLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-24" />
             </div>
           ) : (
-            <p className="text-muted-foreground">No API keys added yet.</p>
+            <Form {...paymentKeysForm}>
+              <form onSubmit={paymentKeysForm.handleSubmit(onPaymentKeysSubmit)} className="space-y-6">
+                <FormField
+                  control={paymentKeysForm.control}
+                  name="stripeApiKey"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Stripe API Key</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="sk_live_... or sk_test_..." {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        Current: {maskApiKey(userSettings?.stripeApiKey)}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={paymentKeysForm.control}
+                  name="darajaApiKey"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Daraja API Key</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="Enter Daraja API Key" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        Current: {maskApiKey(userSettings?.darajaApiKey)}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit" className="shadow-md hover:shadow-lg" disabled={paymentKeysUpdating || authLoading}>
+                  {paymentKeysUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  {paymentKeysUpdating ? 'Saving Keys...' : 'Save API Keys'}
+                </Button>
+              </form>
+            </Form>
           )}
         </CardContent>
       </Card>
-       <AlertDialog open={!!apiKeyToDelete} onOpenChange={(open) => !open && setApiKeyToDelete(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the API key
-                for "{apiKeys.find(k => k.id === apiKeyToDelete)?.serviceName}".
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setApiKeyToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteApiKey} className="bg-destructive hover:bg-destructive/90">
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
     </div>
   );
 }
-
-    

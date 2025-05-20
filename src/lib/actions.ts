@@ -17,9 +17,9 @@ import {
   Timestamp,
   serverTimestamp,
   setDoc,
-  deleteDoc,
+  // deleteDoc, // No longer needed for generic API keys
 } from 'firebase/firestore';
-import type { Transaction, TransactionStatus, UserSettings, ApiKeyEntry } from './types';
+import type { Transaction, TransactionStatus, UserSettings } from './types';
 
 function generateRandomAlphanumeric(length: number): string {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -219,30 +219,40 @@ export async function updateTransactionStatus(transactionId: string, status: Tra
 
 // User Settings Actions
 
-const defaultUserSettings: UserSettings = {
+const defaultUserSettings: Omit<UserSettings, 'userId'> = { // userId is not part of the stored document structure here
   emailNotifications: true,
   smsNotifications: false,
+  stripeApiKey: '', // Default to empty string
+  darajaApiKey: '', // Default to empty string
 };
 
 export async function getUserSettings(userId: string): Promise<UserSettings> {
   if (!userId) {
     console.error('User ID is required to get user settings.');
-    return defaultUserSettings; // Return default if no userId
+    // Ensure the returned type matches UserSettings, which expects all fields
+    return { ...defaultUserSettings };
   }
   try {
     const settingsDocRef = doc(db, 'userSettings', userId);
     const docSnap = await getDoc(settingsDocRef);
 
     if (docSnap.exists()) {
-      return docSnap.data() as UserSettings;
+      // Ensure all fields from UserSettings are present, falling back to defaults
+      const data = docSnap.data();
+      return {
+        emailNotifications: data?.emailNotifications ?? defaultUserSettings.emailNotifications,
+        smsNotifications: data?.smsNotifications ?? defaultUserSettings.smsNotifications,
+        stripeApiKey: data?.stripeApiKey ?? defaultUserSettings.stripeApiKey,
+        darajaApiKey: data?.darajaApiKey ?? defaultUserSettings.darajaApiKey,
+      };
     } else {
       // If no settings found, create with defaults
       await setDoc(settingsDocRef, defaultUserSettings);
-      return defaultUserSettings;
+      return { ...defaultUserSettings };
     }
   } catch (error) {
     console.error('Error fetching user settings:', error);
-    return defaultUserSettings; // Return default on error
+    return { ...defaultUserSettings }; // Return default on error
   }
 }
 
@@ -252,7 +262,15 @@ export async function updateUserSettings(userId: string, settings: Partial<UserS
   }
   try {
     const settingsDocRef = doc(db, 'userSettings', userId);
-    await setDoc(settingsDocRef, settings, { merge: true }); // Use setDoc with merge to create if not exists or update
+    // Prepare data for update, ensuring empty strings are stored if a key is explicitly cleared
+    const dataToUpdate = {
+        ...(settings.emailNotifications !== undefined && { emailNotifications: settings.emailNotifications }),
+        ...(settings.smsNotifications !== undefined && { smsNotifications: settings.smsNotifications }),
+        ...(settings.stripeApiKey !== undefined && { stripeApiKey: settings.stripeApiKey }),
+        ...(settings.darajaApiKey !== undefined && { darajaApiKey: settings.darajaApiKey }),
+    };
+
+    await setDoc(settingsDocRef, dataToUpdate, { merge: true });
     revalidatePath('/dashboard/settings');
     return { success: true, message: 'Settings updated successfully.' };
   } catch (error) {
@@ -261,73 +279,4 @@ export async function updateUserSettings(userId: string, settings: Partial<UserS
   }
 }
 
-// API Key Management Actions
-
-export async function addApiKey(userId: string, serviceName: string, keyValue: string): Promise<{ success: boolean; message?: string, apiKeyId?: string }> {
-  if (!userId || !serviceName || !keyValue) {
-    return { success: false, message: 'User ID, service name, and key value are required.' };
-  }
-  try {
-    const apiKeysCollection = collection(db, 'apiKeys');
-    const newApiKeyData: Omit<ApiKeyEntry, 'id' | 'createdAt'> & { createdAt: any } = {
-      userId,
-      serviceName,
-      keyValue, // Key is stored directly; consider encryption for production
-      createdAt: serverTimestamp(),
-    };
-    const docRef = await addDoc(apiKeysCollection, newApiKeyData);
-    revalidatePath('/dashboard/settings');
-    return { success: true, message: 'API Key added successfully.', apiKeyId: docRef.id };
-  } catch (error) {
-    console.error('Error adding API key:', error);
-    return { success: false, message: 'Failed to add API key.' };
-  }
-}
-
-export async function getUserApiKeys(userId: string): Promise<ApiKeyEntry[]> {
-  if (!userId) {
-    console.error('User ID is required to get API keys.');
-    return [];
-  }
-  try {
-    const apiKeysCollection = collection(db, 'apiKeys');
-    const q = query(
-      apiKeysCollection,
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
-    );
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(docSnap => {
-      const data = docSnap.data() as Omit<ApiKeyEntry, 'id' | 'createdAt'> & { createdAt: Timestamp };
-      return {
-        ...data,
-        id: docSnap.id,
-        createdAt: data.createdAt.toDate().toISOString(),
-      };
-    });
-  } catch (error) {
-    console.error('Error fetching API keys:', error);
-    return [];
-  }
-}
-
-export async function deleteApiKey(userId: string, apiKeyId: string): Promise<{ success: boolean; message?: string }> {
-  if (!userId || !apiKeyId) {
-    return { success: false, message: 'User ID and API Key ID are required.' };
-  }
-  try {
-    const apiKeyDocRef = doc(db, 'apiKeys', apiKeyId);
-    const docSnap = await getDoc(apiKeyDocRef);
-
-    if (!docSnap.exists() || docSnap.data()?.userId !== userId) {
-      return { success: false, message: 'API Key not found or unauthorized.' };
-    }
-
-    await deleteDoc(apiKeyDocRef);
-    revalidatePath('/dashboard/settings');
-    return { success: true, message: 'API Key deleted successfully.' };
-  } catch (error) {
-    console.error('Error deleting API key:', error);
-    return { success: false, message: 'Failed to delete API key.' };
-  }
-}
+// Generic API Key Management Actions (addApiKey, getUserApiKeys, deleteApiKey) are removed.
