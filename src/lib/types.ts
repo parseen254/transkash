@@ -5,19 +5,25 @@ export type TransactionStatus =
   | 'COMPLETED' 
   | 'FAILED_MPESA' 
   | 'CANCELED_STRIPE'
-  | 'PAYMENT_SUCCESSFUL'; // Added after Stripe payment, before MPESA
+  | 'PAYMENT_SUCCESSFUL';
 
 export interface Transaction {
-  id: string; // Firestore document ID
-  userId: string; // Firebase Auth User ID
+  id: string; 
+  userId: string; 
   amount: number;
-  currency: 'KES'; // Assuming KES for now
+  currency: 'KES'; 
   recipientPhone: string;
   status: TransactionStatus;
-  createdAt: string | any; // ISO date string or Firebase Timestamp for new docs
-  updatedAt: string | any; // ISO date string or Firebase Timestamp
+  createdAt: string | any; 
+  updatedAt: string | any; 
   stripePaymentIntentId?: string;
   mpesaTransactionId?: string;
   senderName?: string;
   senderEmail?: string; 
+}
+
+export interface UserSettings {
+  emailNotifications: boolean;
+  smsNotifications: boolean;
+  // Future settings can be added here, e.g., preferredCurrency?: string;
 }

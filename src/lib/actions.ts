@@ -3,7 +3,7 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase'; // Using Firebase admin/ SDK for server-side
+import { db } from '@/lib/firebase'; 
 import { 
   collection, 
   addDoc, 
@@ -15,9 +15,10 @@ import {
   updateDoc, 
   orderBy, 
   Timestamp,
-  serverTimestamp
+  serverTimestamp,
+  setDoc
 } from 'firebase/firestore';
-import type { Transaction, TransactionStatus } from './types';
+import type { Transaction, TransactionStatus, UserSettings } from './types';
 
 function generateRandomAlphanumeric(length: number): string {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -29,10 +30,10 @@ function generateRandomAlphanumeric(length: number): string {
 }
 
 // This function is not strictly "collision-free" in a distributed system without checking the DB.
-// For Firestore, the document ID itself is unique. We'll use Firestore's auto-generated IDs.
+// For Firestore, the document ID itself is unique. We'll use Firestore's auto-generated IDs for main transaction ID.
 // This function can be used for MPESA confirmation codes.
 function generateMpesaConfirmationCode(): string {
-  return generateRandomAlphanumeric(10);
+  return generateRandomAlphanumeric(10).toUpperCase();
 }
 
 const kenyanPhoneNumberRegex = /^\+254\d{9}$/;
@@ -83,7 +84,7 @@ export async function initiateTransfer(
       senderEmail,
       senderName,
       status: 'PENDING_STRIPE',
-      createdAt: serverTimestamp(), // Use Firestore server timestamp
+      createdAt: serverTimestamp(), 
       updatedAt: serverTimestamp(),
     };
     
@@ -120,7 +121,6 @@ export async function getTransactionById(userId: string, transactionId: string):
 
     if (transactionSnap.exists()) {
       const transactionData = transactionSnap.data() as Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: Timestamp, updatedAt: Timestamp };
-      // Ensure the transaction belongs to the user
       if (transactionData.userId !== userId) {
         console.warn('User attempted to access unauthorized transaction.');
         return null; 
@@ -177,7 +177,6 @@ export async function updateTransactionStatus(transactionId: string, status: Tra
   try {
     const transactionDocRef = doc(db, 'transactions', transactionId);
     
-    // Optional: Verify ownership if userId is provided (e.g. for client-side updates)
     if (userId) {
         const currentDoc = await getDoc(transactionDocRef);
         if (!currentDoc.exists() || currentDoc.data()?.userId !== userId) {
@@ -214,5 +213,49 @@ export async function updateTransactionStatus(transactionId: string, status: Tra
   } catch (error) {
     console.error('Error updating transaction status:', error);
     return null;
+  }
+}
+
+// User Settings Actions
+
+const defaultUserSettings: UserSettings = {
+  emailNotifications: true,
+  smsNotifications: false,
+};
+
+export async function getUserSettings(userId: string): Promise<UserSettings> {
+  if (!userId) {
+    console.error('User ID is required to get user settings.');
+    return defaultUserSettings; // Return default if no userId
+  }
+  try {
+    const settingsDocRef = doc(db, 'userSettings', userId);
+    const docSnap = await getDoc(settingsDocRef);
+
+    if (docSnap.exists()) {
+      return docSnap.data() as UserSettings;
+    } else {
+      // If no settings found, create with defaults
+      await setDoc(settingsDocRef, defaultUserSettings);
+      return defaultUserSettings;
+    }
+  } catch (error) {
+    console.error('Error fetching user settings:', error);
+    return defaultUserSettings; // Return default on error
+  }
+}
+
+export async function updateUserSettings(userId: string, settings: Partial<UserSettings>): Promise<{ success: boolean; message?: string }> {
+  if (!userId) {
+    return { success: false, message: 'User ID is required.' };
+  }
+  try {
+    const settingsDocRef = doc(db, 'userSettings', userId);
+    await setDoc(settingsDocRef, settings, { merge: true }); // Use setDoc with merge to create if not exists or update
+    revalidatePath('/dashboard/settings'); // Revalidate if needed, though settings are usually client-side dynamic
+    return { success: true, message: 'Settings updated successfully.' };
+  } catch (error) {
+    console.error('Error updating user settings:', error);
+    return { success: false, message: 'Failed to update settings.' };
   }
 }
