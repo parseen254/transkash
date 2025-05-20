@@ -82,35 +82,44 @@ export default function SettingsPage() {
       const fetchInitialData = async () => {
         setSettingsLoading(true);
         setApiKeysLoading(true);
-        const settings = await getUserSettings(user.uid);
-        setUserSettings(settings);
-        setSettingsLoading(false);
-
-        const keys = await getUserApiKeys(user.uid);
-        setApiKeys(keys);
-        setApiKeysLoading(false);
+        try {
+          const settings = await getUserSettings(user.uid);
+          setUserSettings(settings);
+        } catch (e) {
+          console.error("Failed to load user settings", e);
+          toast({title: "Error", description: "Could not load user settings.", variant: "destructive"})
+        } finally {
+          setSettingsLoading(false);
+        }
+        
+        try {
+          const keys = await getUserApiKeys(user.uid);
+          setApiKeys(keys);
+        } catch (e) {
+          console.error("Failed to load API keys", e);
+           toast({title: "Error", description: "Could not load API keys.", variant: "destructive"})
+        } finally {
+          setApiKeysLoading(false);
+        }
       };
       fetchInitialData();
     }
-  }, [user, profileForm]);
+  }, [user, profileForm, toast]);
 
   const onProfileSubmit = async (data: ProfileFormValues) => {
-    if (!user || !user.uid) {
+    if (!user || !auth.currentUser) { // auth.currentUser for direct updateProfile
       toast({ title: "Error", description: "You must be signed in to update your profile.", variant: "destructive" });
       return;
     }
     setProfileUpdating(true);
     try {
-      await updateProfile(user, { displayName: data.name });
-      // Re-fetch user or update context if your AuthContext doesn't auto-update displayName on `updateProfile`
-      // Forcing a reload or specific user update might be needed for immediate reflection across the app.
-      // For now, we assume AuthContext handles this or a page refresh would show it.
-      setUserSettings(prev => prev ? {...prev} : null); // Trigger re-render if needed for other components listening to user object
+      await updateProfile(auth.currentUser, { displayName: data.name });
+      // AuthContext should pick up the change via onAuthStateChanged, or you can manually update user in context
       toast({
         title: "Profile Updated",
         description: `Display name changed to ${data.name}.`,
       });
-      profileForm.reset({ name: data.name });
+      // Optionally, force re-fetch of user in AuthContext if not auto-updating displayName
     } catch (error) {
       console.error("Profile update error:", error);
       toast({ title: "Update Failed", description: "Could not update your display name.", variant: "destructive" });
@@ -119,19 +128,22 @@ export default function SettingsPage() {
     }
   };
 
-  const handleNotificationChange = async (type: keyof UserSettings, checked: boolean) => {
+  const handleNotificationChange = async (type: keyof Omit<UserSettings, 'userId'>, checked: boolean) => {
     if (!user || !userSettings) return;
     setNotificationsUpdating(true);
-    const newSettings = { ...userSettings, [type]: checked };
+    // Optimistically update UI
+    const oldSettings = {...userSettings};
+    setUserSettings(prev => prev ? {...prev, [type]: checked} : null);
 
     const result = await updateUserSettings(user.uid, { [type]: checked });
     if (result.success) {
-      setUserSettings(newSettings);
       toast({
         title: "Notification Settings Updated",
         description: `${type === 'emailNotifications' ? 'Email' : 'SMS'} notifications ${checked ? 'enabled' : 'disabled'}.`,
       });
     } else {
+      // Revert optimistic update on failure
+      setUserSettings(oldSettings);
       toast({ title: "Update Failed", description: result.message || "Could not update notification settings.", variant: "destructive"});
     }
     setNotificationsUpdating(false);
@@ -146,8 +158,8 @@ export default function SettingsPage() {
         id: result.apiKeyId,
         userId: user.uid,
         serviceName: data.serviceName,
-        keyValue: data.keyValue, // Store full key, but mask in UI
-        createdAt: new Date().toISOString(), // Client-side approx for optimistic update
+        keyValue: data.keyValue, 
+        createdAt: new Date().toISOString(), 
       };
       setApiKeys(prev => [newKey, ...prev].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       toast({ title: "API Key Added", description: `Key for ${data.serviceName} added successfully.` });
@@ -161,7 +173,7 @@ export default function SettingsPage() {
   const handleDeleteApiKey = async () => {
     if (!user || !apiKeyToDelete) return;
     const keyId = apiKeyToDelete;
-    setApiKeyToDelete(null); // Close dialog
+    setApiKeyToDelete(null); 
 
     const result = await deleteApiKey(user.uid, keyId);
     if (result.success) {
@@ -173,12 +185,13 @@ export default function SettingsPage() {
   };
 
   const maskApiKey = (key: string) => {
+    if(!key) return '****';
     if (key.length <= 8) return '****';
     return `${key.substring(0, 4)}****${key.substring(key.length - 4)}`;
   };
 
 
-  if (!isMounted || authLoading) {
+  if (!isMounted || authLoading || !user) { // Ensure user is loaded before rendering form dependent on user data
     return (
       <div className="space-y-8">
         <Skeleton className="h-10 w-1/3 mb-8" />
@@ -385,11 +398,9 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground">Key: {maskApiKey(key.keyValue)}</p>
                     <p className="text-xs text-muted-foreground">Added: {new Date(key.createdAt).toLocaleDateString()}</p>
                   </div>
-                  <AlertDialogTrigger asChild>
-                     <Button variant="ghost" size="icon" onClick={() => setApiKeyToDelete(key.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                  </AlertDialogTrigger>
+                  <Button variant="ghost" size="icon" onClick={() => setApiKeyToDelete(key.id)}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
                 </div>
               ))}
             </div>
@@ -418,3 +429,5 @@ export default function SettingsPage() {
     </div>
   );
 }
+
+    
