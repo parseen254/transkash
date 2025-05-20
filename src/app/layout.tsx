@@ -1,19 +1,15 @@
+
 import type {Metadata} from 'next';
-import { Inter } from 'next/font/google'; // Changed from Geist_Sans to Inter
+import { Inter } from 'next/font/google';
 import './globals.css';
-import { Toaster } from "@/components/ui/toaster"; // Import Toaster
+import { Toaster } from "@/components/ui/toaster";
 import { APP_NAME, APP_DESCRIPTION } from '@/lib/constants';
+import { ThemeProvider } from '@/context/ThemeProvider'; // Added ThemeProvider import
 
-const inter = Inter({ // Changed from geistSans to inter
+const inter = Inter({
   subsets: ['latin'],
-  variable: '--font-inter', // Using a standard variable name for Inter
+  variable: '--font-inter',
 });
-
-// Geist Mono is not explicitly used in this design, can be removed if not needed elsewhere
-// const geistMono = Geist_Mono({
-//   variable: '--font-geist-mono',
-//   subsets: ['latin'],
-// });
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -26,10 +22,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased`}> {/* Use inter.variable */}
-        {children}
-        <Toaster />
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.variable} font-sans antialiased`}>
+        <ThemeProvider defaultTheme="light" storageKey="transkash-theme">
+          {children}
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   );
