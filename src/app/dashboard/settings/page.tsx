@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { updateProfile } from 'firebase/auth'; // Assuming auth is still needed for profile
+import { updateProfile } from 'firebase/auth';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,11 +15,10 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Settings, User, Bell, Palette, KeyRound, Save, Loader2, AlertTriangle } from "lucide-react";
 import { useTheme } from '@/context/ThemeProvider';
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from '@/context/AuthContext'; // auth object itself is not directly used here, but useAuth() is
+import { useAuth } from '@/context/AuthContext';
 import type { UserSettings } from '@/lib/types';
 import { getUserSettings, updateUserSettings } from '@/lib/actions';
 import { Skeleton } from '@/components/ui/skeleton';
-// AlertDialog and related imports are removed as generic API key deletion is removed
 
 const profileFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters.").max(50, "Name must be less than 50 characters."),
@@ -32,11 +31,18 @@ const paymentKeysFormSchema = z.object({
 });
 type PaymentKeysFormValues = z.infer<typeof paymentKeysFormSchema>;
 
+const defaultUserSettingsForForm: UserSettings = { // Used for form defaults if settings are null initially
+  emailNotifications: true,
+  smsNotifications: false,
+  stripeApiKey: '',
+  darajaApiKey: '',
+};
+
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
-  const { user, auth, loading: authLoading } = useAuth(); // auth from useAuth() for updateProfile
+  const { user, auth, loading: authLoading } = useAuth(); 
 
   const [isMounted, setIsMounted] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
@@ -119,7 +125,7 @@ export default function SettingsPage() {
         description: `${type === 'emailNotifications' ? 'Email' : 'SMS'} notifications ${checked ? 'enabled' : 'disabled'}.`,
       });
     } else {
-      setUserSettings(oldSettings);
+      setUserSettings(oldSettings); // Revert optimistic update
       toast({ title: "Update Failed", description: result.message || "Could not update notification settings.", variant: "destructive"});
     }
     setNotificationsUpdating(false);
@@ -130,14 +136,14 @@ export default function SettingsPage() {
     setPaymentKeysUpdating(true);
     
     const settingsToUpdate: Partial<UserSettings> = {
-      stripeApiKey: data.stripeApiKey || '', // Send empty string if user clears it
-      darajaApiKey: data.darajaApiKey || '', // Send empty string if user clears it
+      stripeApiKey: data.stripeApiKey || '', 
+      darajaApiKey: data.darajaApiKey || '', 
     };
 
     const result = await updateUserSettings(user.uid, settingsToUpdate);
     if (result.success) {
       toast({ title: "API Keys Updated", description: "Your payment gateway API keys have been saved." });
-      setUserSettings(prev => ({...(prev || defaultUserSettings), ...settingsToUpdate}));
+      setUserSettings(prev => ({...(prev || defaultUserSettingsForForm), ...settingsToUpdate}));
     } else {
       toast({ title: "Update Failed", description: result.message || "Could not update API keys.", variant: "destructive" });
     }
@@ -163,7 +169,7 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
               <Skeleton className="h-10 w-full" />
-              { i === 3 && <Skeleton className="h-10 w-full mt-2" /> /* For API keys card */}
+              { i === 0 && <Skeleton className="h-10 w-full mt-2" /> /* For API keys card (now first) */}
             </CardContent>
           </Card>
         ))}
@@ -179,6 +185,76 @@ export default function SettingsPage() {
           Settings
         </h1>
       </div>
+
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center"><KeyRound className="mr-2 h-5 w-5 text-primary" /> Payment Gateway API Keys</CardTitle>
+          <CardDescription>Manage your Stripe and Daraja API keys. Ensure your Firestore Security Rules are properly configured to protect these keys.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-md mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <AlertTriangle className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">Security Warning</h3>
+                <div className="mt-2 text-sm text-yellow-700">
+                  <p>API keys grant access to external services and financial transactions. Handle them with extreme care. Never share secret keys publicly or commit them to version control. For production systems, consider storing highly sensitive keys (like Stripe secret keys) in a secure backend vault (e.g., Google Secret Manager) accessed only by server-side functions, not directly by client-side code.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          {settingsLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-24" />
+            </div>
+          ) : (
+            <Form {...paymentKeysForm}>
+              <form onSubmit={paymentKeysForm.handleSubmit(onPaymentKeysSubmit)} className="space-y-6">
+                <FormField
+                  control={paymentKeysForm.control}
+                  name="stripeApiKey"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Stripe API Key</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="sk_live_... or sk_test_..." {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        Current: {maskApiKey(userSettings?.stripeApiKey)} (Enter new key to update, leave blank to keep current)
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={paymentKeysForm.control}
+                  name="darajaApiKey"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Daraja API Key</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="Enter Daraja API Key" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        Current: {maskApiKey(userSettings?.darajaApiKey)} (Enter new key to update, leave blank to keep current)
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit" className="shadow-md hover:shadow-lg" disabled={paymentKeysUpdating || authLoading}>
+                  {paymentKeysUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  {paymentKeysUpdating ? 'Saving Keys...' : 'Save API Keys'}
+                </Button>
+              </form>
+            </Form>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="shadow-lg">
         <CardHeader>
@@ -286,75 +362,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center"><KeyRound className="mr-2 h-5 w-5 text-primary" /> Payment Gateway API Keys</CardTitle>
-          <CardDescription>Manage your Stripe and Daraja API keys. Ensure your Firestore Security Rules are properly configured.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-md mb-6">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <AlertTriangle className="h-5 w-5 text-yellow-400" />
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-yellow-800">Security Warning</h3>
-                <div className="mt-2 text-sm text-yellow-700">
-                  <p>API keys grant access to external services and financial transactions. Handle them with extreme care. Never share secret keys. For production, consider using a backend-managed vault for these keys.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          {settingsLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-24" />
-            </div>
-          ) : (
-            <Form {...paymentKeysForm}>
-              <form onSubmit={paymentKeysForm.handleSubmit(onPaymentKeysSubmit)} className="space-y-6">
-                <FormField
-                  control={paymentKeysForm.control}
-                  name="stripeApiKey"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Stripe API Key</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="sk_live_... or sk_test_..." {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        Current: {maskApiKey(userSettings?.stripeApiKey)}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={paymentKeysForm.control}
-                  name="darajaApiKey"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Daraja API Key</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="Enter Daraja API Key" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        Current: {maskApiKey(userSettings?.darajaApiKey)}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" className="shadow-md hover:shadow-lg" disabled={paymentKeysUpdating || authLoading}>
-                  {paymentKeysUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  {paymentKeysUpdating ? 'Saving Keys...' : 'Save API Keys'}
-                </Button>
-              </form>
-            </Form>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
+
