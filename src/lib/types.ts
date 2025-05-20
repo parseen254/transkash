@@ -25,9 +25,26 @@ export interface Transaction {
 export interface UserSettings {
   emailNotifications: boolean;
   smsNotifications: boolean;
-  stripeApiKey?: string; // Added Stripe API Key
-  darajaApiKey?: string; // Added Daraja API Key
-  // Future settings can be added here, e.g., preferredCurrency?: string;
+  stripeApiKey?: string;
+  darajaApiKey?: string;
 }
 
-// ApiKeyEntry interface is removed as it's no longer needed for the simplified approach
+export type PaymentRequestStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELED';
+
+export interface PaymentRequest {
+  id: string; // Document ID in Firestore, same as requestId for the link
+  userId: string; // Creator of the request
+  amount: number;
+  currency: string; // e.g., 'KES'
+  description?: string;
+  recipientMpesaNumber: string; // User's Mpesa # to receive funds
+  status: PaymentRequestStatus;
+  createdAt: string | any; // Firestore Timestamp
+  updatedAt: string | any; // Firestore Timestamp
+  
+  // Fields to be filled when payment is made (for future implementation)
+  payerName?: string;
+  payerEmail?: string;
+  paymentMethod?: 'STRIPE' | 'MPESA_STK' | 'MPESA_PAYBILL';
+  relatedTransactionId?: string; // Optional: Link to a transaction in 'transactions' collection
+}

@@ -17,9 +17,8 @@ import {
   Timestamp,
   serverTimestamp,
   setDoc,
-  // deleteDoc, // No longer needed for generic API keys
 } from 'firebase/firestore';
-import type { Transaction, TransactionStatus, UserSettings } from './types';
+import type { Transaction, TransactionStatus, UserSettings, PaymentRequest, PaymentRequestStatus } from './types';
 
 function generateRandomAlphanumeric(length: number): string {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -30,9 +29,6 @@ function generateRandomAlphanumeric(length: number): string {
   return result;
 }
 
-// This function is not strictly "collision-free" in a distributed system without checking the DB.
-// For Firestore, the document ID itself is unique. We'll use Firestore's auto-generated IDs for main transaction ID.
-// This function can be used for MPESA confirmation codes.
 function generateMpesaConfirmationCode(): string {
   return generateRandomAlphanumeric(10).toUpperCase();
 }
@@ -219,17 +215,16 @@ export async function updateTransactionStatus(transactionId: string, status: Tra
 
 // User Settings Actions
 
-const defaultUserSettings: Omit<UserSettings, 'userId'> = { // userId is not part of the stored document structure here
+const defaultUserSettings: Omit<UserSettings, 'userId'> = {
   emailNotifications: true,
   smsNotifications: false,
-  stripeApiKey: '', // Default to empty string
-  darajaApiKey: '', // Default to empty string
+  stripeApiKey: '',
+  darajaApiKey: '',
 };
 
 export async function getUserSettings(userId: string): Promise<UserSettings> {
   if (!userId) {
     console.error('User ID is required to get user settings.');
-    // Ensure the returned type matches UserSettings, which expects all fields
     return { ...defaultUserSettings };
   }
   try {
@@ -237,7 +232,6 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
     const docSnap = await getDoc(settingsDocRef);
 
     if (docSnap.exists()) {
-      // Ensure all fields from UserSettings are present, falling back to defaults
       const data = docSnap.data();
       return {
         emailNotifications: data?.emailNotifications ?? defaultUserSettings.emailNotifications,
@@ -246,13 +240,12 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
         darajaApiKey: data?.darajaApiKey ?? defaultUserSettings.darajaApiKey,
       };
     } else {
-      // If no settings found, create with defaults
       await setDoc(settingsDocRef, defaultUserSettings);
       return { ...defaultUserSettings };
     }
   } catch (error) {
     console.error('Error fetching user settings:', error);
-    return { ...defaultUserSettings }; // Return default on error
+    return { ...defaultUserSettings };
   }
 }
 
@@ -262,7 +255,6 @@ export async function updateUserSettings(userId: string, settings: Partial<UserS
   }
   try {
     const settingsDocRef = doc(db, 'userSettings', userId);
-    // Prepare data for update, ensuring empty strings are stored if a key is explicitly cleared
     const dataToUpdate = {
         ...(settings.emailNotifications !== undefined && { emailNotifications: settings.emailNotifications }),
         ...(settings.smsNotifications !== undefined && { smsNotifications: settings.smsNotifications }),
@@ -279,4 +271,144 @@ export async function updateUserSettings(userId: string, settings: Partial<UserS
   }
 }
 
-// Generic API Key Management Actions (addApiKey, getUserApiKeys, deleteApiKey) are removed.
+// --- Payment Request Actions ---
+
+const CreatePaymentRequestSchema = z.object({
+  userId: z.string().min(1, "User ID is required."),
+  amount: z.coerce.number().positive("Amount must be positive.").min(10, "Minimum amount is KES 10."), // Example minimum
+  currency: z.string().length(3, "Currency code must be 3 letters, e.g., KES."),
+  description: z.string().max(200, "Description cannot exceed 200 characters.").optional(),
+  recipientMpesaNumber: z.string().regex(kenyanPhoneNumberRegex, "Invalid Kenyan MPESA number format."),
+});
+
+export interface CreatePaymentRequestState {
+  message?: string | null;
+  errors?: {
+    userId?: string[];
+    amount?: string[];
+    currency?: string[];
+    description?: string[];
+    recipientMpesaNumber?: string[];
+    general?: string[];
+  };
+  paymentRequestId?: string | null;
+  paymentRequestLink?: string | null;
+  success?: boolean;
+}
+
+export async function createPaymentRequest(
+  data: z.infer<typeof CreatePaymentRequestSchema>
+): Promise<CreatePaymentRequestState> {
+  const validatedFields = CreatePaymentRequestSchema.safeParse(data);
+
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: 'Validation failed. Please check your inputs.',
+      success: false,
+    };
+  }
+
+  const { userId, amount, currency, description, recipientMpesaNumber } = validatedFields.data;
+
+  try {
+    const newPaymentRequestData: Omit<PaymentRequest, 'id' | 'createdAt' | 'updatedAt' | 'status'> & { createdAt: any, updatedAt: any, status: PaymentRequestStatus } = {
+      userId,
+      amount,
+      currency,
+      description: description || '',
+      recipientMpesaNumber,
+      status: 'PENDING',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    const paymentRequestsCollection = collection(db, 'paymentRequests');
+    const docRef = await addDoc(paymentRequestsCollection, newPaymentRequestData);
+
+    revalidatePath('/dashboard/payment-requests');
+
+    // Construct the link (assuming your app is hosted at NEXT_PUBLIC_APP_URL)
+    // You'll need to set NEXT_PUBLIC_APP_URL in your .env.local
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+    const paymentRequestLink = appUrl ? `${appUrl}/pay/${docRef.id}` : null;
+
+
+    return {
+      message: 'Payment request created successfully!',
+      paymentRequestId: docRef.id,
+      paymentRequestLink: paymentRequestLink,
+      success: true,
+    };
+
+  } catch (error) {
+    console.error('Payment request creation failed:', error);
+    return {
+      message: 'An unexpected error occurred creating the payment request.',
+      errors: { general: ['Payment request creation failed.'] },
+      success: false,
+    };
+  }
+}
+
+export async function getPaymentRequestsByUser(userId: string): Promise<PaymentRequest[]> {
+  if (!userId) {
+    console.error('User ID is required to fetch payment requests.');
+    return [];
+  }
+  try {
+    const paymentRequestsCollection = collection(db, 'paymentRequests');
+    const q = query(
+      paymentRequestsCollection,
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+
+    return querySnapshot.docs.map(docSnap => {
+      const data = docSnap.data() as Omit<PaymentRequest, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: Timestamp, updatedAt: Timestamp };
+      return {
+        ...data,
+        id: docSnap.id,
+        createdAt: data.createdAt.toDate().toISOString(),
+        updatedAt: data.updatedAt.toDate().toISOString(),
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching payment requests by user:', error);
+    return [];
+  }
+}
+
+export async function getPaymentRequestPublic(requestId: string): Promise<PaymentRequest | null> {
+  if (!requestId) {
+    console.error('Request ID is required to fetch payment request.');
+    return null;
+  }
+  try {
+    const requestDocRef = doc(db, 'paymentRequests', requestId);
+    const docSnap = await getDoc(requestDocRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data() as Omit<PaymentRequest, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: Timestamp, updatedAt: Timestamp };
+      // Optionally, you might want to fetch limited user details of the creator here if needed
+      // For now, returning the raw request data
+      return {
+        ...data,
+        id: docSnap.id,
+        createdAt: data.createdAt.toDate().toISOString(),
+        updatedAt: data.updatedAt.toDate().toISOString(),
+      };
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error('Error fetching payment request for public page:', error);
+    return null;
+  }
+}
+
+// TODO: Add action to update payment request status (e.g., to PAID, CANCELED)
+// This would be called after a payment is processed (e.g., by a Stripe webhook or Mpesa callback handler)
+// export async function updatePaymentRequestStatus(requestId: string, status: PaymentRequestStatus, paymentDetails?: Partial<PaymentRequest>): Promise<PaymentRequest | null> { ... }
+

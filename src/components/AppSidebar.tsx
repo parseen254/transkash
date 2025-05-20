@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, ArrowRightLeft, ListChecks, Settings, LifeBuoy, LogOut, UserCircle, ChevronDown, Loader2 } from 'lucide-react';
+import { Home, ArrowRightLeft, ListChecks, Settings, LifeBuoy, LogOut, UserCircle, ChevronDown, Loader2, Link2 } from 'lucide-react';
 import AppLogo from '@/components/AppLogo';
 import {
   Sidebar,
@@ -32,6 +32,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: Home },
   { href: '/dashboard/transfer/new', label: 'New Transfer', icon: ArrowRightLeft },
   { href: '/dashboard/transactions', label: 'Transactions', icon: ListChecks },
+  { href: '/dashboard/payment-requests', label: 'Payment Requests', icon: Link2 },
 ];
 
 const bottomNavItems = [
