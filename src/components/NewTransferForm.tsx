@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { DollarSign, Smartphone, User, Mail, Send } from 'lucide-react';
 import { initiateTransfer, InitiateTransferState } from '@/lib/actions';
-import { useFormState } from 'react-dom';
+import { useActionState } from 'react'; // Changed from react-dom
 import { useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -35,13 +35,14 @@ const formSchema = z.object({
 export default function NewTransferForm() {
   const { toast } = useToast();
   const router = useRouter();
-  const [state, formAction] = useFormState<InitiateTransferState | undefined, FormData>(initiateTransfer, undefined);
+  // Updated to useActionState
+  const [state, formAction] = useActionState<InitiateTransferState | undefined, FormData>(initiateTransfer, undefined);
   const formRef = useRef<HTMLFormElement>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      amount: '', // Changed from undefined to empty string
+      amount: '', // Ensure amount is initialized as a string
       recipientPhone: '',
       senderName: '',
       senderEmail: '',
