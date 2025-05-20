@@ -12,13 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Settings, User, Bell, Palette, KeyRound, Save, Loader2, AlertTriangle } from "lucide-react";
+import { Settings, User, Bell, Palette, KeyRound, Save, Loader2, AlertTriangle, PlusCircle, Trash2 } from "lucide-react";
 import { useTheme } from '@/context/ThemeProvider';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/context/AuthContext';
-import type { UserSettings } from '@/lib/types';
-import { getUserSettings, updateUserSettings } from '@/lib/actions';
+import type { UserSettings, ApiKeyEntry } from '@/lib/types';
+import { getUserSettings, updateUserSettings, addApiKey, getUserApiKeys, deleteApiKey as deleteApiKeyAction } from '@/lib/actions';
 import { Skeleton } from '@/components/ui/skeleton';
+// AlertDialog related imports are removed as the dialog is being removed.
 
 const profileFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters.").max(50, "Name must be less than 50 characters."),
@@ -26,23 +27,28 @@ const profileFormSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 const paymentKeysFormSchema = z.object({
-  stripeApiKey: z.string().optional().or(z.literal('')), // Allow empty string to clear
-  darajaApiKey: z.string().optional().or(z.literal('')), // Allow empty string to clear
+  stripeApiKey: z.string().optional().or(z.literal('')),
+  darajaApiKey: z.string().optional().or(z.literal('')),
 });
 type PaymentKeysFormValues = z.infer<typeof paymentKeysFormSchema>;
 
-const defaultUserSettingsForForm: UserSettings = { // Used for form defaults if settings are null initially
+const addApiKeyFormSchema = z.object({
+  serviceName: z.string().min(2, "Service name must be at least 2 characters.").max(50),
+  keyValue: z.string().min(10, "API Key must be at least 10 characters.").max(200), // Adjusted max length
+});
+type AddApiKeyFormValues = z.infer<typeof addApiKeyFormSchema>;
+
+const defaultUserSettingsForForm: UserSettings = {
   emailNotifications: true,
   smsNotifications: false,
   stripeApiKey: '',
   darajaApiKey: '',
 };
 
-
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
-  const { user, auth, loading: authLoading } = useAuth(); 
+  const { user, auth, loading: authLoading } = useAuth();
 
   const [isMounted, setIsMounted] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
@@ -51,20 +57,25 @@ export default function SettingsPage() {
   const [notificationsUpdating, setNotificationsUpdating] = useState(false);
   const [paymentKeysUpdating, setPaymentKeysUpdating] = useState(false);
 
+  const [isAddingApiKey, setIsAddingApiKey] = useState(false);
+  const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
+  const [loadingApiKeys, setLoadingApiKeys] = useState(true);
+  const [deletingKeyId, setDeletingKeyId] = useState<string | null>(null);
+
 
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
-    defaultValues: {
-      name: '',
-    },
+    defaultValues: { name: '' },
   });
 
   const paymentKeysForm = useForm<PaymentKeysFormValues>({
     resolver: zodResolver(paymentKeysFormSchema),
-    defaultValues: {
-      stripeApiKey: '',
-      darajaApiKey: '',
-    },
+    defaultValues: { stripeApiKey: '', darajaApiKey: '' },
+  });
+
+  const addApiKeyForm = useForm<AddApiKeyFormValues>({
+    resolver: zodResolver(addApiKeyFormSchema),
+    defaultValues: { serviceName: '', keyValue: '' },
   });
 
   useEffect(() => {
@@ -74,6 +85,7 @@ export default function SettingsPage() {
 
       const fetchInitialData = async () => {
         setSettingsLoading(true);
+        setLoadingApiKeys(true);
         try {
           const settings = await getUserSettings(user.uid);
           setUserSettings(settings);
@@ -81,11 +93,16 @@ export default function SettingsPage() {
             stripeApiKey: settings.stripeApiKey || '',
             darajaApiKey: settings.darajaApiKey || '',
           });
+
+          const keys = await getUserApiKeys(user.uid);
+          setApiKeys(keys);
+
         } catch (e) {
-          console.error("Failed to load user settings", e);
-          toast({title: "Error", description: "Could not load user settings.", variant: "destructive"})
+          console.error("Failed to load user settings or API keys", e);
+          toast({ title: "Error", description: "Could not load user settings or API keys.", variant: "destructive" });
         } finally {
           setSettingsLoading(false);
+          setLoadingApiKeys(false);
         }
       };
       fetchInitialData();
@@ -93,17 +110,14 @@ export default function SettingsPage() {
   }, [user, profileForm, paymentKeysForm, toast]);
 
   const onProfileSubmit = async (data: ProfileFormValues) => {
-    if (!user || !auth?.currentUser) { 
+    if (!user || !auth?.currentUser) {
       toast({ title: "Error", description: "You must be signed in to update your profile.", variant: "destructive" });
       return;
     }
     setProfileUpdating(true);
     try {
       await updateProfile(auth.currentUser, { displayName: data.name });
-      toast({
-        title: "Profile Updated",
-        description: `Display name changed to ${data.name}.`,
-      });
+      toast({ title: "Profile Updated", description: `Display name changed to ${data.name}.` });
     } catch (error) {
       console.error("Profile update error:", error);
       toast({ title: "Update Failed", description: "Could not update your display name.", variant: "destructive" });
@@ -115,18 +129,15 @@ export default function SettingsPage() {
   const handleNotificationChange = async (type: 'emailNotifications' | 'smsNotifications', checked: boolean) => {
     if (!user || !userSettings) return;
     setNotificationsUpdating(true);
-    const oldSettings = {...userSettings};
-    setUserSettings(prev => prev ? {...prev, [type]: checked} : null);
+    const oldSettings = { ...userSettings };
+    setUserSettings(prev => prev ? { ...prev, [type]: checked } : null);
 
     const result = await updateUserSettings(user.uid, { [type]: checked });
     if (result.success) {
-      toast({
-        title: "Notification Settings Updated",
-        description: `${type === 'emailNotifications' ? 'Email' : 'SMS'} notifications ${checked ? 'enabled' : 'disabled'}.`,
-      });
+      toast({ title: "Notification Settings Updated", description: `${type === 'emailNotifications' ? 'Email' : 'SMS'} notifications ${checked ? 'enabled' : 'disabled'}.` });
     } else {
-      setUserSettings(oldSettings); // Revert optimistic update
-      toast({ title: "Update Failed", description: result.message || "Could not update notification settings.", variant: "destructive"});
+      setUserSettings(oldSettings);
+      toast({ title: "Update Failed", description: result.message || "Could not update notification settings.", variant: "destructive" });
     }
     setNotificationsUpdating(false);
   };
@@ -134,28 +145,53 @@ export default function SettingsPage() {
   const onPaymentKeysSubmit = async (data: PaymentKeysFormValues) => {
     if (!user) return;
     setPaymentKeysUpdating(true);
-    
     const settingsToUpdate: Partial<UserSettings> = {
-      stripeApiKey: data.stripeApiKey || '', 
-      darajaApiKey: data.darajaApiKey || '', 
+      stripeApiKey: data.stripeApiKey || '',
+      darajaApiKey: data.darajaApiKey || '',
     };
-
     const result = await updateUserSettings(user.uid, settingsToUpdate);
     if (result.success) {
       toast({ title: "API Keys Updated", description: "Your payment gateway API keys have been saved." });
-      setUserSettings(prev => ({...(prev || defaultUserSettingsForForm), ...settingsToUpdate}));
+      setUserSettings(prev => ({ ...(prev || defaultUserSettingsForForm), ...settingsToUpdate }));
+      paymentKeysForm.reset({ stripeApiKey: '', darajaApiKey: '' }); // Clear fields after successful save
     } else {
       toast({ title: "Update Failed", description: result.message || "Could not update API keys.", variant: "destructive" });
     }
     setPaymentKeysUpdating(false);
   };
-  
+
+  const handleAddNewApiKey = async (data: AddApiKeyFormValues) => {
+    if (!user) return;
+    setIsAddingApiKey(true);
+    const result = await addApiKey(user.uid, data.serviceName, data.keyValue);
+    if (result.success && result.apiKey) {
+      toast({ title: "API Key Added", description: `${data.serviceName} key saved.` });
+      setApiKeys(prev => [...prev, result.apiKey!].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      addApiKeyForm.reset();
+    } else {
+      toast({ title: "Failed to Add Key", description: result.message || "Could not save API key.", variant: "destructive" });
+    }
+    setIsAddingApiKey(false);
+  };
+
+  const handleDirectDeleteApiKey = async (keyId: string) => {
+    if (!user) return;
+    setDeletingKeyId(keyId);
+    const result = await deleteApiKeyAction(user.uid, keyId);
+    if (result.success) {
+      toast({ title: "API Key Deleted", description: result.message });
+      setApiKeys(prev => prev.filter(k => k.id !== keyId));
+    } else {
+      toast({ title: "Deletion Failed", description: result.message || "Could not delete API key.", variant: "destructive" });
+    }
+    setDeletingKeyId(null);
+  };
+
   const maskApiKey = (key?: string) => {
-    if(!key || key.length === 0) return 'Not Set';
+    if (!key || key.length === 0) return 'Not Set';
     if (key.length <= 8) return '********';
     return `${key.substring(0, 4)}****${key.substring(key.length - 4)}`;
   };
-
 
   if (!isMounted || authLoading || !user) {
     return (
@@ -169,7 +205,7 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
               <Skeleton className="h-10 w-full" />
-              { i === 0 && <Skeleton className="h-10 w-full mt-2" /> /* For API keys card (now first) */}
+              {i === 0 && <Skeleton className="h-10 w-full mt-2" />}
             </CardContent>
           </Card>
         ))}
@@ -224,7 +260,7 @@ export default function SettingsPage() {
                         <Input type="password" placeholder="sk_live_... or sk_test_..." {...field} />
                       </FormControl>
                       <FormDescription>
-                        Current: {maskApiKey(userSettings?.stripeApiKey)} (Enter new key to update, leave blank to keep current)
+                        Current: {maskApiKey(userSettings?.stripeApiKey)} (Enter new key to update, or leave blank to keep current. Enter a single space then backspace to clear.)
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -240,7 +276,7 @@ export default function SettingsPage() {
                         <Input type="password" placeholder="Enter Daraja API Key" {...field} />
                       </FormControl>
                       <FormDescription>
-                        Current: {maskApiKey(userSettings?.darajaApiKey)} (Enter new key to update, leave blank to keep current)
+                        Current: {maskApiKey(userSettings?.darajaApiKey)} (Enter new key to update, or leave blank to keep current. Enter a single space then backspace to clear.)
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -255,6 +291,91 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+      
+      {/* Generic API Key Management Card - Retained as per original file structure if this specific popup is the target */}
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center"><KeyRound className="mr-2 h-5 w-5 text-primary" /> Other API Key Management</CardTitle>
+          <CardDescription>Manage other API keys you might use with the application. Use strong, unique keys.</CardDescription>
+        </CardHeader>
+        <CardContent>
+           <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-md mb-6">
+             <div className="flex">
+               <div className="flex-shrink-0">
+                 <AlertTriangle className="h-5 w-5 text-yellow-400" />
+               </div>
+               <div className="ml-3">
+                 <h3 className="text-sm font-medium text-yellow-800">Security Reminder</h3>
+                 <div className="mt-2 text-sm text-yellow-700">
+                   <p>Always handle API keys with care. Ensure your Firestore security rules are properly configured to protect these keys and that they are only accessible by authorized users/processes.</p>
+                 </div>
+               </div>
+             </div>
+           </div>
+
+          <Form {...addApiKeyForm}>
+            <form onSubmit={addApiKeyForm.handleSubmit(handleAddNewApiKey)} className="space-y-4 mb-6">
+              <FormField
+                control={addApiKeyForm.control}
+                name="serviceName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Service Name</FormLabel>
+                    <FormControl><Input placeholder="e.g., WeatherAPI, AnalyticsService" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={addApiKeyForm.control}
+                name="keyValue"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>API Key Value</FormLabel>
+                    <FormControl><Input type="password" placeholder="Enter the API key" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" className="shadow-md" disabled={isAddingApiKey}>
+                {isAddingApiKey ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+                {isAddingApiKey ? 'Adding Key...' : 'Add API Key'}
+              </Button>
+            </form>
+          </Form>
+
+          {loadingApiKeys ? (
+            <div className="space-y-2">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : apiKeys.length > 0 ? (
+            <div className="space-y-3">
+              <h4 className="text-md font-medium">Saved API Keys:</h4>
+              {apiKeys.map((key) => (
+                <div key={key.id} className="flex items-center justify-between p-3 border rounded-md bg-muted/50">
+                  <div>
+                    <p className="font-medium">{key.serviceName}</p>
+                    <p className="text-sm text-muted-foreground">Key: {maskApiKey(key.keyValue)}</p>
+                    <p className="text-xs text-muted-foreground">Added: {new Date(key.createdAt).toLocaleDateString()}</p>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => handleDirectDeleteApiKey(key.id)}
+                    disabled={deletingKeyId === key.id}
+                  >
+                    {deletingKeyId === key.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-destructive" />}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No generic API keys added yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
 
       <Card className="shadow-lg">
         <CardHeader>
@@ -361,8 +482,6 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
-
     </div>
   );
 }
-
