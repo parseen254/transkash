@@ -9,7 +9,7 @@ export interface UserProfile {
   firstName?: string;
   lastName?: string;
   displayName?: string | null;
-  personalPhone?: string; 
+  personalPhone?: string;
   photoURL?: string | null;
   createdAt?: Timestamp | Date;
   updatedAt?: Timestamp | Date;
@@ -51,10 +51,10 @@ export interface PaymentLink {
   creationDate: string | Timestamp | Date; // Allow string for dummy data, Firestore for real
   expiryDate?: string | Timestamp | Date; // Optional
   status: 'Active' | 'Expired' | 'Disabled' | 'Paid';
-  payoutAccountId?: string; // ID of the payout account
-  payoutAccount?: string; // TEMPORARY for edit form, should be ID
+  payoutAccountId: string; // ID of the payout account - Now required
   shortUrl?: string; // The actual shareable link
   updatedAt?: Timestamp | Date;
+  hasExpiry?: boolean;
 }
 
 export interface PaymentDetails {
@@ -69,13 +69,14 @@ export interface PaymentDetails {
 export interface Transaction {
   id: string;
   date: string; // Formatted date string for display
-  customer: string;
+  customer: string; // Payer's name or identifier
   amount: string; // Formatted amount for display
   status: 'Completed' | 'Pending' | 'Failed';
-  userId: string;
-  currency: string;
-  linkName:string;
-  purpose:string;
+  userId?: string; // User who owns the payment link
+  currency?: string;
+  linkName?:string; // Name of the payment link used
+  purpose?:string; // Purpose of the payment link
   creationDate: Date | Timestamp;
-  reference: string;
+  reference: string; // Transaction reference
+  paymentLinkId?: string; // ID of the payment link this transaction is for
 }
