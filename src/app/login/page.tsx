@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { signInWithEmailAndPassword, signInWithPopup, sendEmailVerification } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithRedirect, sendEmailVerification, getRedirectResult, type UserCredential } from 'firebase/auth';
 import { auth, googleAuthProvider, db } from '@/lib/firebase';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,8 @@ import { Input } from '@/components/ui/input';
 import { CenteredCardLayout } from '@/components/layouts/centered-card-layout';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { ChromeIcon } from 'lucide-react'; // Assuming you have a Chrome or Google icon
+import { ChromeIcon } from 'lucide-react';
+import React, { useEffect, useState } from 'react'; // Added useEffect and useState
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
@@ -27,6 +28,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 const LoginPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
+  const [isProcessingRedirect, setIsProcessingRedirect] = useState(true); // To handle redirect state
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -36,13 +38,74 @@ const LoginPage: NextPage = () => {
     },
   });
 
+  // Handle Firebase Redirect Result
+  useEffect(() => {
+    const processRedirect = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        setIsProcessingRedirect(false); // Finished processing attempt
+
+        if (result) {
+          // User signed in via redirect
+          const user = result.user;
+          toast({
+            title: "Processing Google Sign-In...",
+            description: "Please wait.",
+          });
+
+          const userRef = doc(db, "users", user.uid);
+          const userSnap = await getDoc(userRef);
+
+          if (!userSnap.exists()) {
+            await setDoc(userRef, {
+              uid: user.uid,
+              email: user.email,
+              displayName: user.displayName,
+              photoURL: user.photoURL,
+              firstName: user.displayName?.split(' ')[0] || '',
+              lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
+              createdAt: serverTimestamp(),
+              lastLoginAt: serverTimestamp(),
+              provider: 'google.com',
+            });
+          } else {
+            await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
+          }
+
+          toast({
+            title: "Login Successful",
+            description: "Redirecting to dashboard...",
+          });
+          router.push('/dashboard');
+        }
+        // If result is null, it means no redirect sign-in happened, or it was already handled.
+        // Or the user navigated to the login page directly.
+      } catch (error: any) {
+        setIsProcessingRedirect(false);
+        console.error('Google Sign-In redirect error:', error);
+        let errorMessage = error.message || "An error occurred with Google Sign-In. Please try again.";
+        if (error.code === 'auth/account-exists-with-different-credential') {
+          errorMessage = "An account already exists with this email address using a different sign-in method.";
+        }
+        toast({
+          title: "Google Sign-In Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
+    };
+
+    processRedirect();
+  }, [router, toast]);
+
+
   const onSubmit = async (data: LoginFormValues) => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, data.email, data.password);
       const user = userCredential.user;
 
       if (user && !user.emailVerified) {
-        await auth.signOut(); // Sign out user if email is not verified
+        await auth.signOut();
         await sendEmailVerification(user);
         toast({
           title: "Email Not Verified",
@@ -50,11 +113,10 @@ const LoginPage: NextPage = () => {
           variant: "destructive",
           duration: 9000,
         });
-        form.reset(); // Reset form
+        form.reset();
         return;
       }
       
-      // Update last login time
       const userRef = doc(db, "users", user.uid);
       await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
 
@@ -77,47 +139,35 @@ const LoginPage: NextPage = () => {
   };
 
   const handleGoogleSignIn = async () => {
+    // Initiate redirect flow
     try {
-      const result = await signInWithPopup(auth, googleAuthProvider);
-      const user = result.user;
-      
-      // Check if it's a new user via Google Sign-In
-      const userRef = doc(db, "users", user.uid);
-      const userSnap = await getDoc(userRef);
-
-      if (!userSnap.exists()) {
-        // New user, create a document in Firestore
-        await setDoc(userRef, {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
-          firstName: user.displayName?.split(' ')[0] || '',
-          lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
-          createdAt: serverTimestamp(),
-          lastLoginAt: serverTimestamp(),
-          provider: 'google.com',
-        });
-      } else {
-         // Existing user, update last login
-        await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
-      }
-
+      await signInWithRedirect(auth, googleAuthProvider);
+      // The browser will redirect to Google, and then back to this page.
+      // The useEffect hook with getRedirectResult will handle the outcome.
+      // Show a loading/redirecting state if needed
       toast({
-        title: "Login Successful",
-        description: "Redirecting to dashboard...",
+        title: "Redirecting to Google...",
+        description: "Please complete the sign-in with Google."
       });
-      router.push('/dashboard');
     } catch (error: any) {
-      console.error('Google Sign-In error:', error);
-      toast({
-        title: "Google Sign-In Failed",
-        description: error.message || "An error occurred. Please try again.",
-        variant: "destructive",
-      });
+        console.error('Google Sign-In initiation error:', error);
+        toast({
+          title: "Google Sign-In Failed",
+          description: error.message || "Could not initiate Google Sign-In. Please try again.",
+          variant: "destructive",
+        });
     }
   };
   
+  if (isProcessingRedirect) {
+    return (
+      <CenteredCardLayout title="Processing Sign-In...">
+        <div className="flex justify-center items-center p-10">
+          <p className="text-muted-foreground">Please wait while we check your sign-in status...</p>
+        </div>
+      </CenteredCardLayout>
+    );
+  }
 
   return (
     <CenteredCardLayout title="Login to Your Account">
