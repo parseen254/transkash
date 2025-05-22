@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, LinkIcon as LinkIconLucide, Settings, Landmark, LogOut, Users, ShieldCheck } from 'lucide-react';
+import { Home, LinkIcon as LinkIconLucide, Settings, Landmark, LogOut, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -13,7 +13,6 @@ import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { AppLogo } from '@/components/shared/app-logo';
-// import { ThemeToggleButton } from '@/components/shared/theme-toggle-button'; // Removed
 
 
 interface NavItem {
@@ -26,9 +25,8 @@ const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/dashboard/payment-links', label: 'Payment Links', icon: LinkIconLucide },
   { href: '/dashboard/payouts', label: 'Payout Accounts', icon: Landmark },
-  { href: '/dashboard/customers', label: 'Customers', icon: Users },
+  // { href: '/dashboard/customers', label: 'Customers', icon: Users }, // Removed
   { href: '/dashboard/settings', label: 'Profile Settings', icon: Settings },
-  // { href: '/dashboard/security', label: 'Security', icon: ShieldCheck }, // Security page was removed
 ];
 
 interface MainSidebarProps {
@@ -114,7 +112,6 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
             )}
             </div>
         </div>
-        {/* <ThemeToggleButton /> */} {/* Removed */}
       </div>
 
       <nav className="flex-grow p-4 space-y-1 overflow-y-auto">
