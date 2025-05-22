@@ -5,7 +5,7 @@ import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { ArrowLeft, CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
@@ -18,14 +18,23 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import type { PayoutAccount } from '@/lib/types';
+
+// Dummy data for payout accounts - In a real app, fetch this
+const dummyPayoutAccounts: PayoutAccount[] = [
+  { id: 'acc_1', accountName: 'Main Business Account', accountNumber: 'xxxx', bankName: 'Equity', status: 'Active' },
+  { id: 'acc_2', accountName: 'Personal Savings', accountNumber: 'xxxx', bankName: 'KCB', status: 'Active' },
+];
 
 const paymentLinkSchema = z.object({
   linkName: z.string().min(1, { message: 'Link name is required.' }),
   reference: z.string().min(1, { message: 'Reference is required.' }),
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: 'Amount must be a valid number with up to two decimal places.' }),
   purpose: z.string().min(1, { message: 'Purpose is required.' }),
+  payoutAccountId: z.string().min(1, { message: 'Payout account is required.' }),
   hasExpiry: z.boolean().default(false),
   expiryDate: z.date().optional(),
 }).refine(data => {
@@ -51,6 +60,7 @@ const CreatePaymentLinkPage: NextPage = () => {
       reference: '',
       amount: '',
       purpose: '',
+      payoutAccountId: '',
       hasExpiry: false,
       expiryDate: undefined,
     },
@@ -148,6 +158,35 @@ const CreatePaymentLinkPage: NextPage = () => {
                     <FormControl>
                       <Textarea placeholder="Payment for web development services" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="payoutAccountId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Payout Account</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a payout account" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {dummyPayoutAccounts.map(acc => {
+                          if (acc.id === "") {
+                            console.error("PayoutAccount found with empty ID:", acc);
+                            return null; 
+                          }
+                          return (
+                           <SelectItem key={acc.id} value={acc.id}>{acc.accountName} ({acc.bankName})</SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

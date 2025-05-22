@@ -29,7 +29,7 @@ const editPaymentLinkSchema = z.object({
   reference: z.string().min(1, { message: 'Reference is required.' }),
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: 'Amount must be a valid number.' }),
   purpose: z.string().min(1, { message: 'Purpose is required.' }),
-  payoutAccountId: z.string().optional(),
+  payoutAccountId: z.string().min(1, { message: 'Payout account is required.' }),
   hasExpiry: z.boolean().default(false),
   expiryDate: z.date().optional(),
 }).refine(data => {
@@ -49,7 +49,6 @@ const dummyPayoutAccounts: PayoutAccount[] = [
   { id: 'acc_2', accountName: 'Personal Savings', accountNumber: 'xxxx', bankName: 'KCB', status: 'Active' },
 ];
 
-const NONE_PAYOUT_ACCOUNT_VALUE = "___NONE___";
 
 const EditPaymentLinkPage: NextPage = () => {
   const router = useRouter();
@@ -86,7 +85,7 @@ const EditPaymentLinkPage: NextPage = () => {
         purpose: 'Consultation Services Update',
         creationDate: '2023-10-01',
         status: 'Active',
-        payoutAccount: 'acc_1',
+        payoutAccount: 'acc_1', // Ensure a default valid ID for required field
         hasExpiry: id === 'pl_1', // Example: link pl_1 has expiry
         expiryDate: id === 'pl_1' ? new Date(new Date().setDate(new Date().getDate() + 7)).toISOString() : undefined, // Expires in 7 days if pl_1
       };
@@ -96,7 +95,7 @@ const EditPaymentLinkPage: NextPage = () => {
         reference: dummyLinkData.reference,
         amount: dummyLinkData.amount,
         purpose: dummyLinkData.purpose,
-        payoutAccountId: dummyLinkData.payoutAccount || '',
+        payoutAccountId: dummyLinkData.payoutAccount || dummyPayoutAccounts[0]?.id || '', // Default to first account if main is missing
         hasExpiry: !!dummyLinkData.hasExpiry,
         expiryDate: dummyLinkData.expiryDate ? new Date(dummyLinkData.expiryDate) : undefined,
       });
@@ -114,10 +113,7 @@ const EditPaymentLinkPage: NextPage = () => {
     if (!submissionData.hasExpiry) {
       delete submissionData.expiryDate; 
     }
-    if (submissionData.payoutAccountId === NONE_PAYOUT_ACCOUNT_VALUE) {
-      submissionData.payoutAccountId = '';
-    }
-
+    
     console.log('Updated payment link data:', id, submissionData);
     toast({
       title: "Payment Link Updated!",
@@ -205,12 +201,10 @@ const EditPaymentLinkPage: NextPage = () => {
                 name="payoutAccountId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Payout Account (Optional)</FormLabel>
+                    <FormLabel>Payout Account</FormLabel>
                     <Select
-                      value={field.value === '' ? NONE_PAYOUT_ACCOUNT_VALUE : field.value}
-                      onValueChange={(valueFromSelectItem) => {
-                        field.onChange(valueFromSelectItem === NONE_PAYOUT_ACCOUNT_VALUE ? '' : valueFromSelectItem);
-                      }}
+                      value={field.value}
+                      onValueChange={field.onChange}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -218,7 +212,6 @@ const EditPaymentLinkPage: NextPage = () => {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value={NONE_PAYOUT_ACCOUNT_VALUE}>None</SelectItem>
                         {dummyPayoutAccounts.map(acc => {
                           if (acc.id === "") {
                             console.error("PayoutAccount found with empty ID:", acc);
@@ -314,6 +307,4 @@ const EditPaymentLinkPage: NextPage = () => {
 };
 
 export default EditPaymentLinkPage;
-    
-
     
