@@ -56,10 +56,8 @@ const SignUpPage: NextPage = () => {
         displayName: `${data.firstName} ${data.lastName}`,
       });
 
-      await sendEmailVerification(user);
-
+      
       const userRef = doc(db, "users", user.uid);
-      // Explicitly type the object being set to Firestore
       const newUserProfileData: Omit<UserProfile, 'uid' | 'lastLoginAt' | 'updatedAt' | 'phone' | 'businessName' | 'photoURL'> & { uid: string; createdAt: any; provider: string } = {
         uid: user.uid,
         email: user.email,
@@ -71,12 +69,14 @@ const SignUpPage: NextPage = () => {
       };
       await setDoc(userRef, newUserProfileData);
       
+      await sendEmailVerification(user);
+
       toast({
         title: "Account Created!",
-        description: "A verification email has been sent. Please check your inbox (and spam folder) to verify your account before logging in.",
-        duration: 9000,
+        description: "A verification email has been sent. Please check your inbox to activate your account.",
+        duration: 7000,
       });
-      router.push('/login');
+      router.push(`/please-verify-email?email=${encodeURIComponent(data.email)}`);
     } catch (error: any) {
       console.error('Sign up error:', error);
       let errorMessage = "An error occurred during sign up. Please try again.";

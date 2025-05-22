@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { signInWithEmailAndPassword, signInWithRedirect, sendEmailVerification, getRedirectResult, type User as FirebaseUser } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithRedirect, getRedirectResult, type User as FirebaseUser } from 'firebase/auth';
 import { auth, googleAuthProvider, db } from '@/lib/firebase';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
@@ -58,9 +58,6 @@ const LoginPage: NextPage = () => {
     if (userSnap.exists()) {
       await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
     } else { 
-      // This case should ideally be handled for Google sign-in if profile doesn't exist
-      // For email/password, profile is created on signup.
-      // If it's a Google user and no profile, create one:
       if (user.providerData.some(p => p.providerId === 'google.com')) {
         const newUserProfile: UserProfile = {
           uid: user.uid,
@@ -92,6 +89,13 @@ const LoginPage: NextPage = () => {
         const result = await getRedirectResult(auth);
         if (result) {
           const user = result.user;
+          if (!user.emailVerified && user.providerData.some(p => p.providerId === 'password')) {
+             // This case should ideally not happen often with redirect,
+             // as unverified email/password users are handled in onSubmit.
+             // But if it does, or for other providers that might need verification:
+            router.push(`/please-verify-email?email=${encodeURIComponent(user.email || '')}`);
+            return;
+          }
           toast({
             title: "Google Sign-In Successful",
             description: "Processing your details...",
@@ -117,7 +121,7 @@ const LoginPage: NextPage = () => {
     };
     processRedirect();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // handleSuccessfulLogin removed from deps as it causes re-runs
+  }, []); 
 
   const onSubmit = async (data: LoginFormValues) => {
     setIsSubmittingManual(true);
@@ -126,19 +130,14 @@ const LoginPage: NextPage = () => {
       const user = userCredential.user;
 
       if (user && !user.emailVerified) {
-        await auth.signOut(); 
-        await sendEmailVerification(user); 
-        toast({
-          title: "Email Not Verified",
-          description: "Your email address is not verified. We've sent a new verification link to your email. Please check your inbox (and spam folder).",
-          variant: "destructive",
-          duration: 9000,
-        });
-        form.reset();
+        // User is signed in, but email is not verified. Redirect to verification page.
+        // Do NOT sign them out here, so `auth.currentUser` is available on the next page.
+        router.push(`/please-verify-email?email=${encodeURIComponent(data.email)}`);
         setIsSubmittingManual(false);
         return;
       }
       
+      // If email is verified or it's not an email/password provider that requires it (e.g. Google)
       await handleSuccessfulLogin(user);
 
     } catch (error: any) {
@@ -159,7 +158,9 @@ const LoginPage: NextPage = () => {
   const handleGoogleSignIn = async () => {
     setIsSubmittingManual(true); 
     try {
+      // For Google, email is typically pre-verified or verification isn't an intermediate step.
       await signInWithRedirect(auth, googleAuthProvider);
+      // The redirect result will be handled by the useEffect hook.
     } catch (error: any) {
         console.error('Google Sign-In initiation error:', error);
         toast({
@@ -197,7 +198,7 @@ const LoginPage: NextPage = () => {
         </Button>
       </header>
 
-      <main className="flex min-h-screen flex-col items-center justify-center p-4 pt-20"> {/* Added pt-20 for header spacing */}
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 pt-20">
         <div className="w-full max-w-sm space-y-8">
           <h1 className="text-3xl font-semibold text-center text-foreground">
             Welcome back
