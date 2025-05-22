@@ -26,6 +26,17 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
+// Google G logo SVG
+const GoogleIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M17.6402 9.18199C17.6402 8.56379 17.582 7.96379 17.4748 7.38199H9V10.811H13.8438C13.6366 11.9702 13.001 12.923 12.0476 13.5612V15.819H14.9562C16.6582 14.2528 17.6402 11.9456 17.6402 9.18199Z" fill="#4285F4"/>
+    <path d="M9.00001 18.0002C11.4307 18.0002 13.4698 17.1932 14.9562 15.8191L12.0476 13.5613C11.2406 14.0853 10.211 14.4205 9.00001 14.4205C6.65592 14.4205 4.67164 12.8374 3.96412 10.71H0.957031V13.0418C2.43823 15.9832 5.48183 18.0002 9.00001 18.0002Z" fill="#34A853"/>
+    <path d="M3.96412 10.7098C3.78437 10.1725 3.67612 9.59979 3.67612 8.99989C3.67612 8.39999 3.78437 7.82739 3.96412 7.28989V4.95801H0.957031C0.347841 6.17319 0 7.54789 0 8.99989C0 10.4519 0.347841 11.8266 0.957031 13.0418L3.96412 10.7098Z" fill="#FBBC05"/>
+    <path d="M9.00001 3.57955C10.3214 3.57955 11.5076 4.03375 12.4403 4.92555L15.0219 2.344C13.4626 0.891955 11.4235 0 9.00001 0C5.48183 0 2.43823 2.01695 0.957031 4.95805L3.96412 7.29C4.67164 5.16275 6.65592 3.57955 9.00001 3.57955Z" fill="#EA4335"/>
+  </svg>
+);
+
+
 const LoginPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
@@ -81,6 +92,8 @@ const LoginPage: NextPage = () => {
         let errorMessage = error.message || "An error occurred with Google Sign-In. Please try again.";
         if (error.code === 'auth/account-exists-with-different-credential') {
           errorMessage = "An account already exists with this email address using a different sign-in method.";
+        } else if (error.code === 'auth/popup-closed-by-user') {
+          errorMessage = "The sign-in window was closed before completing. Please try again.";
         }
         toast({
           title: "Google Sign-In Failed",
@@ -137,13 +150,13 @@ const LoginPage: NextPage = () => {
   };
 
   const handleGoogleSignIn = async () => {
-    setIsSubmittingManual(true); // Also indicate loading for Google sign-in start
+    setIsSubmittingManual(true); 
     try {
       await signInWithRedirect(auth, googleAuthProvider);
-      toast({
-        title: "Redirecting to Google...",
-        description: "Please complete the sign-in with Google."
-      });
+      // toast({ // Toast might not be visible if page redirects immediately
+      //   title: "Redirecting to Google...",
+      //   description: "Please complete the sign-in with Google."
+      // });
     } catch (error: any) {
         console.error('Google Sign-In initiation error:', error);
         toast({
@@ -246,12 +259,12 @@ const LoginPage: NextPage = () => {
 
           <Button 
             variant="secondary" 
-            className="w-full h-12 rounded-lg text-base text-foreground" 
+            className="w-full h-12 rounded-lg text-base text-foreground flex items-center justify-center gap-2" 
             onClick={handleGoogleSignIn} 
             disabled={isFormSubmitting}
           >
-            {/* ChromeIcon removed as per design */}
-            Google
+            <GoogleIcon />
+            Continue with Google
           </Button>
 
           <div className="text-center text-sm">
@@ -267,5 +280,4 @@ const LoginPage: NextPage = () => {
 };
 
 export default LoginPage;
-
     
