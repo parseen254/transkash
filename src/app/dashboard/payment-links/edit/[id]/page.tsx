@@ -53,7 +53,7 @@ const dummyPayoutAccounts: PayoutAccount[] = [
 const EditPaymentLinkPage: NextPage = () => {
   const router = useRouter();
   const params = useParams();
-  const { id } = params;
+  const { id } = params; // id of the payment link being edited
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
 
@@ -77,7 +77,7 @@ const EditPaymentLinkPage: NextPage = () => {
       setLoading(true);
       await new Promise(resolve => setTimeout(resolve, 500));
       // Dummy link data - including potential expiry info
-      const dummyLinkData: PaymentLink & { hasExpiry?: boolean } = {
+      const dummyLinkData: Partial<PaymentLink> & { payoutAccount?: string } = {
         id: id as string,
         linkName: `Invoice #${id} Payment`,
         reference: `INV-${id}`,
@@ -85,17 +85,17 @@ const EditPaymentLinkPage: NextPage = () => {
         purpose: 'Consultation Services Update',
         creationDate: '2023-10-01',
         status: 'Active',
-        payoutAccount: 'acc_1', // Ensure a default valid ID for required field
-        hasExpiry: id === 'pl_1', // Example: link pl_1 has expiry
-        expiryDate: id === 'pl_1' ? new Date(new Date().setDate(new Date().getDate() + 7)).toISOString() : undefined, // Expires in 7 days if pl_1
+        payoutAccount: 'acc_1', 
+        hasExpiry: id === 'pl_1', 
+        expiryDate: id === 'pl_1' ? new Date(new Date().setDate(new Date().getDate() + 7)).toISOString() : undefined,
       };
 
       form.reset({
-        linkName: dummyLinkData.linkName,
-        reference: dummyLinkData.reference,
-        amount: dummyLinkData.amount,
-        purpose: dummyLinkData.purpose,
-        payoutAccountId: dummyLinkData.payoutAccount || dummyPayoutAccounts[0]?.id || '', // Default to first account if main is missing
+        linkName: dummyLinkData.linkName || '',
+        reference: dummyLinkData.reference || '',
+        amount: dummyLinkData.amount || '',
+        purpose: dummyLinkData.purpose || '',
+        payoutAccountId: dummyLinkData.payoutAccountId || (dummyPayoutAccounts.length > 0 ? dummyPayoutAccounts[0].id : ''),
         hasExpiry: !!dummyLinkData.hasExpiry,
         expiryDate: dummyLinkData.expiryDate ? new Date(dummyLinkData.expiryDate) : undefined,
       });
@@ -119,7 +119,11 @@ const EditPaymentLinkPage: NextPage = () => {
       title: "Payment Link Updated!",
       description: `${data.linkName} has been updated successfully.`,
     });
-    router.push('/dashboard/payment-links');
+    if (id) {
+      router.push(`/dashboard/payment-links/${id}`); // Redirect to the specific link's detail page
+    } else {
+      router.push('/dashboard/payment-links'); // Fallback redirect
+    }
   };
 
   if (loading) {
@@ -128,10 +132,10 @@ const EditPaymentLinkPage: NextPage = () => {
 
   return (
     <div className="space-y-6">
-      <Link href="/dashboard/payment-links" legacyBehavior>
+      <Link href={id ? `/dashboard/payment-links/${id}` : "/dashboard/payment-links"} legacyBehavior>
         <a className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4">
           <ArrowLeft className="h-4 w-4" />
-          Back to Payment Links
+          Back to Payment Link Details
         </a>
       </Link>
       <Card className="max-w-2xl mx-auto">
