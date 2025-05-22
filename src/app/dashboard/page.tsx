@@ -18,29 +18,29 @@ import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 
-// Dummy Data Structures for stats and charts (will remain dummy for now)
 interface StatCardData {
   title: string;
   value: string;
   change: string;
-  positiveChange: boolean;
+  positiveChange?: boolean; // Made optional as N/A won't have a positive/negative state
 }
 
 const statData: StatCardData[] = [
-  { title: 'Total Revenue', value: 'KES 12,500', change: '+10%', positiveChange: true }, // Updated currency
-  { title: 'Avg. Transaction Value', value: 'KES 75', change: '+5%', positiveChange: true }, // Updated currency
-  { title: 'Customer Retention Rate', value: '85%', change: '+2%', positiveChange: true },
+  { title: 'Total Revenue', value: 'KES 0.00', change: 'N/A' },
+  { title: 'Avg. Transaction Value', value: 'KES 0.00', change: 'N/A' },
+  { title: 'Customer Retention Rate', value: '0%', change: 'N/A' },
 ];
 
+// Keep dummy data for charts to allow easy testing, but UI will handle empty state
 const monthlyRevenueChartData = [
-  { month: 'Jan', revenue: 1500 }, { month: 'Feb', revenue: 1800 }, { month: 'Mar', revenue: 1300 },
-  { month: 'Apr', revenue: 2200 }, { month: 'May', revenue: 2000 }, { month: 'Jun', revenue: 2800 },
-  { month: 'Jul', revenue: 2500 },
+  // { month: 'Jan', revenue: 1500 }, { month: 'Feb', revenue: 1800 }, { month: 'Mar', revenue: 1300 },
+  // { month: 'Apr', revenue: 2200 }, { month: 'May', revenue: 2000 }, { month: 'Jun', revenue: 2800 },
+  // { month: 'Jul', revenue: 2500 },
 ];
 
 const quarterlySalesChartData = [
-  { name: 'Q1', sales: 8000 }, { name: 'Q2', sales: 12000 },
-  { name: 'Q3', sales: 9500 }, { name: 'Q4', sales: 15000 },
+  // { name: 'Q1', sales: 8000 }, { name: 'Q2', sales: 12000 },
+  // { name: 'Q3', sales: 9500 }, { name: 'Q4', sales: 15000 },
 ];
 
 interface TopProductData {
@@ -48,7 +48,7 @@ interface TopProductData {
   value: number;
 }
 const topSellingProductsData: TopProductData[] = [
-  { name: 'Product A', value: 80 }, { name: 'Product B', value: 60 }, { name: 'Product C', value: 40 },
+  // { name: 'Product A', value: 80 }, { name: 'Product B', value: 60 }, { name: 'Product C', value: 40 },
 ];
 
 const monthlyRevenueChartConfig = { revenue: { label: "Revenue", color: "hsl(var(--chart-1))" } } satisfies ChartConfig;
@@ -73,8 +73,8 @@ const DashboardPage: NextPage = () => {
     const q = query(
       transactionsCollection, 
       where('userId', '==', user.uid), 
-      orderBy('date', 'desc'), 
-      limit(5) // Fetch latest 5 transactions
+      orderBy('createdAt', 'desc'), // Order by creation timestamp for recent
+      limit(5)
     );
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -100,7 +100,8 @@ const DashboardPage: NextPage = () => {
     );
   }
   
-  const formatDate = (dateValue: Timestamp | Date | string) => {
+  const formatDate = (dateValue: Timestamp | Date | string | undefined) => {
+    if (!dateValue) return 'N/A';
     const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue);
     return format(date, 'yyyy-MM-dd');
   };
@@ -115,8 +116,16 @@ const DashboardPage: NextPage = () => {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {statData.map((stat) => (
           <Card key={stat.title} className="bg-secondary shadow-sm rounded-xl">
-            <CardHeader className="pb-2 p-6"><CardDescription className="text-base font-medium text-foreground">{stat.title}</CardDescription><CardTitle className="text-2xl font-bold tracking-light">{stat.value}</CardTitle></CardHeader>
-            <CardContent className="p-6 pt-0"><div className={`text-base font-medium ${stat.positiveChange ? 'text-green-600' : 'text-destructive'} flex items-center`}>{stat.positiveChange && <ArrowUp className="h-4 w-4 mr-1" />}{stat.change}</div></CardContent>
+            <CardHeader className="pb-2 p-6">
+                <CardDescription className="text-base font-medium text-foreground">{stat.title}</CardDescription>
+                <CardTitle className="text-2xl font-bold tracking-light">{stat.value}</CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 pt-0">
+                <div className={`text-base font-medium ${stat.positiveChange === undefined ? 'text-muted-foreground' : stat.positiveChange ? 'text-green-600' : 'text-destructive'} flex items-center`}>
+                    {stat.positiveChange && <ArrowUp className="h-4 w-4 mr-1" />}
+                    {stat.change}
+                </div>
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -145,7 +154,7 @@ const DashboardPage: NextPage = () => {
                 <TableBody>
                   {recentTransactions.map((transaction) => (
                     <TableRow key={transaction.id} className="h-[72px]">
-                      <TableCell className="px-4 py-2 text-sm text-muted-foreground">{formatDate(transaction.date)}</TableCell>
+                      <TableCell className="px-4 py-2 text-sm text-muted-foreground">{formatDate(transaction.createdAt)}</TableCell> {/* Use createdAt */}
                       <TableCell className="px-4 py-2 text-sm font-normal text-foreground">{transaction.customer}</TableCell>
                       <TableCell className="px-4 py-2 text-sm text-muted-foreground">{transaction.currency} {transaction.amount.toFixed(2)}</TableCell>
                       <TableCell className="px-4 py-2 text-sm">
@@ -164,20 +173,80 @@ const DashboardPage: NextPage = () => {
         <h2 className="text-[22px] font-bold leading-tight tracking-[-0.015em] text-foreground px-4 pb-3 pt-5">Sales Trends</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2 px-4 py-6">
           <Card className="bg-card shadow-sm rounded-xl border border-border">
-            <CardHeader className="p-6"><CardTitle className="text-base font-medium text-foreground">Monthly Revenue</CardTitle><CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">KES 12,500</CardDescription><div className="flex gap-1 pt-1"><p className="text-base text-muted-foreground font-normal">Last 12 Months</p><p className="text-base text-green-600 font-medium">+10%</p></div></CardHeader>
-            <CardContent className="h-[250px] p-4"><ChartContainer config={monthlyRevenueChartConfig} className="h-full w-full">
-                <LineChart data={monthlyRevenueChartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}><CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" /><XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => value.slice(0, 3)} /><YAxis tickLine={false} axisLine={false} tickMargin={8} /><RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} /><Line dataKey="revenue" type="monotone" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} /></LineChart>
-            </ChartContainer></CardContent>
+            <CardHeader className="p-6">
+                <CardTitle className="text-base font-medium text-foreground">Monthly Revenue</CardTitle>
+                <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">KES 0.00</CardDescription>
+                <div className="flex gap-1 pt-1">
+                    <p className="text-base text-muted-foreground font-normal">Last 12 Months</p>
+                    <p className="text-base text-muted-foreground font-medium">N/A</p>
+                </div>
+            </CardHeader>
+            <CardContent className="h-[250px] p-4">
+              {monthlyRevenueChartData.length > 0 ? (
+                <ChartContainer config={monthlyRevenueChartConfig} className="h-full w-full">
+                    <LineChart data={monthlyRevenueChartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                        <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => value.slice(0, 3)} />
+                        <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                        <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
+                        <Line dataKey="revenue" type="monotone" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                    </LineChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">No data available for this chart.</div>
+              )}
+            </CardContent>
           </Card>
           <Card className="bg-card shadow-sm rounded-xl border border-border">
-            <CardHeader className="p-6"><CardTitle className="text-base font-medium text-foreground">Quarterly Sales</CardTitle><CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">KES 37,500</CardDescription><div className="flex gap-1 pt-1"><p className="text-base text-muted-foreground font-normal">Last 4 Quarters</p><p className="text-base text-green-600 font-medium">+15%</p></div></CardHeader>
-            <CardContent className="h-[250px] p-4"><ChartContainer config={quarterlySalesChartConfig} className="h-full w-full">
-                <BarChart data={quarterlySalesChartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}><CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" /><XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} /><YAxis tickLine={false} axisLine={false} tickMargin={8} /><RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="dot" hideLabel />} /><Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} /></BarChart>
-            </ChartContainer></CardContent>
+            <CardHeader className="p-6">
+                <CardTitle className="text-base font-medium text-foreground">Quarterly Sales</CardTitle>
+                <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">KES 0.00</CardDescription>
+                <div className="flex gap-1 pt-1">
+                    <p className="text-base text-muted-foreground font-normal">Last 4 Quarters</p>
+                    <p className="text-base text-muted-foreground font-medium">N/A</p>
+                </div>
+            </CardHeader>
+            <CardContent className="h-[250px] p-4">
+                {quarterlySalesChartData.length > 0 ? (
+                    <ChartContainer config={quarterlySalesChartConfig} className="h-full w-full">
+                        <BarChart data={quarterlySalesChartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                            <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                            <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                            <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="dot" hideLabel />} />
+                            <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ChartContainer>
+                ) : (
+                     <div className="flex items-center justify-center h-full text-muted-foreground">No data available for this chart.</div>
+                )}
+            </CardContent>
           </Card>
           <Card className="bg-card shadow-sm rounded-xl border border-border">
-             <CardHeader className="p-6"><CardTitle className="text-base font-medium text-foreground">Top Selling Products</CardTitle><CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">Product A</CardDescription><div className="flex gap-1 pt-1"><p className="text-base text-muted-foreground font-normal">This Quarter</p><p className="text-base text-green-600 font-medium">+5%</p></div></CardHeader>
-            <CardContent className="space-y-6 p-6 pt-2">{topSellingProductsData.map((product) => (<div key={product.name}><div className="flex justify-between text-[13px] font-bold text-muted-foreground tracking-[0.015em] mb-1"><span>{product.name}</span></div><div className="h-2 w-full bg-muted rounded-full"><div className="h-2 bg-primary rounded-full" style={{ width: `${product.value}%` }} /></div></div>))}</CardContent>
+             <CardHeader className="p-6">
+                <CardTitle className="text-base font-medium text-foreground">Top Selling Products</CardTitle>
+                <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">N/A</CardDescription>
+                <div className="flex gap-1 pt-1">
+                    <p className="text-base text-muted-foreground font-normal">This Quarter</p>
+                    <p className="text-base text-muted-foreground font-medium">N/A</p>
+                </div>
+            </CardHeader>
+            <CardContent className="space-y-6 p-6 pt-2">
+                {topSellingProductsData.length > 0 ? (
+                    topSellingProductsData.map((product) => (
+                        <div key={product.name}>
+                            <div className="flex justify-between text-[13px] font-bold text-muted-foreground tracking-[0.015em] mb-1">
+                                <span>{product.name}</span>
+                            </div>
+                            <div className="h-2 w-full bg-muted rounded-full">
+                                <div className="h-2 bg-primary rounded-full" style={{ width: `${product.value}%` }} />
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                     <div className="flex items-center justify-center h-[100px] text-muted-foreground">No data available for this chart.</div>
+                )}
+            </CardContent>
           </Card>
         </div>
       </div>
@@ -197,3 +266,6 @@ const DashboardPage: NextPage = () => {
 };
 
 export default DashboardPage;
+
+
+    
