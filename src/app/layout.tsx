@@ -5,6 +5,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/auth-context';
 import { ThemeProvider } from '@/contexts/theme-provider';
+import { SiteFooter } from '@/components/shared/footer'; // Import the new footer
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -17,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'pesi X',
-  description: 'Seamless payments with pesi X.',
+  title: 'PesiX', // Updated title
+  description: 'Seamless payments with PesiX.',
 };
 
 export default function RootLayout({
@@ -31,7 +32,10 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased font-sans`}>
         <ThemeProvider defaultTheme="system" storageKey="pesix-ui-theme">
           <AuthProvider>
-            {children}
+            <div className="flex flex-col min-h-screen">
+              <main className="flex-grow">{children}</main>
+              <SiteFooter /> {/* Add SiteFooter here */}
+            </div>
             <Toaster />
           </AuthProvider>
         </ThemeProvider>
@@ -39,3 +43,5 @@ export default function RootLayout({
     </html>
   );
 }
+
+    
