@@ -9,15 +9,17 @@ import { Button } from '@/components/ui/button';
 import { AppLogo } from '@/components/shared/app-logo';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Spinner } from '@/components/ui/spinner';
 import type { PaymentLink } from '@/lib/types';
 import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 // Dummy Data for Payment Links (simulates fetching from a backend)
 const dummyPaymentLinks: PaymentLink[] = [
-  { id: 'pl_1', linkName: 'Invoice #1234', reference: 'INV001', amount: '5000', currency: 'KES', purpose: 'Consultation Services', creationDate: new Date('2023-10-01').toISOString(), expiryDate: new Date().setDate(new Date().getDate() + 15), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_1', hasExpiry: true },
-  { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: '1500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: new Date('2023-10-05').toISOString(), expiryDate: new Date().setDate(new Date().getDate() + 30), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_2', hasExpiry: true },
+  { id: 'pl_1', linkName: 'Invoice #1234 (The Coffee Shop)', reference: 'ORD1234567890', amount: '25.00', currency: 'KES', purpose: 'Coffee and Snacks', creationDate: new Date('2023-10-01').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 15)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_1', hasExpiry: true },
+  { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: '1500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: new Date('2023-10-05').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 30)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_2', hasExpiry: true },
   { id: 'pl_3', linkName: 'Monthly Subscription', reference: 'SUB003', amount: '2000', currency: 'KES', purpose: 'SaaS Subscription', creationDate: new Date('2023-09-20').toISOString(), status: 'Active', payoutAccountId: 'acc_2', shortUrl: '/payment/order?paymentLinkId=pl_3', hasExpiry: false },
 ];
 
@@ -44,6 +46,7 @@ const PaymentForOrderContent: React.FC = () => {
   const [errorLoadingLink, setErrorLoadingLink] = useState<string | null>(null);
 
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | undefined>(undefined);
+  const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
@@ -55,12 +58,11 @@ const PaymentForOrderContent: React.FC = () => {
       setTimeout(() => {
         const foundLink = dummyPaymentLinks.find(link => link.id === paymentLinkId);
         if (foundLink) {
-          // Check if link is expired (if it has an expiryDate)
           if (foundLink.hasExpiry && foundLink.expiryDate && new Date(foundLink.expiryDate) < new Date()) {
-            setErrorLoadingLink(`Payment link "${foundLink.linkName}" has expired.`);
+            setErrorLoadingLink(`Payment link "${foundLink.linkName}" has expired on ${format(new Date(foundLink.expiryDate), 'PPP')}.`);
             setCurrentPaymentLink(null);
           } else if (foundLink.status !== 'Active') {
-            setErrorLoadingLink(`Payment link "${foundLink.linkName}" is not currently active. Status: ${foundLink.status}`);
+            setErrorLoadingLink(`Payment link "${foundLink.linkName}" is not currently active. Status: ${foundLink.status}.`);
             setCurrentPaymentLink(null);
           } else {
             setCurrentPaymentLink(foundLink);
@@ -97,6 +99,16 @@ const PaymentForOrderContent: React.FC = () => {
       return;
     }
 
+    if (selectedPaymentMethod === 'mpesa' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?(7\d{8})$/)) {
+        toast({
+          title: "Invalid Phone Number",
+          description: "Please enter a valid M-Pesa phone number (e.g., 07XXXXXXXX or +2547XXXXXXXX).",
+          variant: "destructive",
+        });
+        return;
+    }
+
+
     setIsProcessing(true);
     toast({
       title: "Processing Payment",
@@ -114,9 +126,9 @@ const PaymentForOrderContent: React.FC = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            phoneNumber: "254712345678", 
+            phoneNumber: mpesaPhoneNumber, 
             amount: numericAmount,
-            accountReference: currentPaymentLink.reference,
+            accountReference: currentPaymentLink.reference, // Using link reference as account reference for STK
             transactionDesc: currentPaymentLink.purpose
           }),
         });
@@ -140,7 +152,7 @@ const PaymentForOrderContent: React.FC = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            cardNumber: "************1234",
+            cardNumber: "************1234", // Mock data
             expiryMonth: "12",
             expiryYear: "2025",
             cvv: "123",
@@ -168,6 +180,9 @@ const PaymentForOrderContent: React.FC = () => {
 
     if (paymentSuccessful) {
       router.push('/payment/successful');
+    } else {
+      // Optionally, redirect to failure page even if toast is shown, for consistency
+      // router.push('/payment/failed'); 
     }
   };
   
@@ -190,72 +205,115 @@ const PaymentForOrderContent: React.FC = () => {
       </div>
     );
   }
+  
+  const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
 
   return (
     <div className="w-full max-w-md space-y-8">
       <h1 className="text-3xl font-semibold text-center text-foreground">
-        Payment for your order
+        {pageTitle}
       </h1>
 
-      <div className="space-y-4 text-sm">
+      <div className="space-y-2 text-sm p-4 border border-border rounded-lg bg-secondary/30">
+        <p className="text-base font-medium text-foreground">Payment Details</p>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Order from</span>
           <span className="font-medium text-foreground">{currentPaymentLink.linkName}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-muted-foreground">Reference #</span>
+          <span className="text-muted-foreground">Order #</span>
           <span className="font-medium text-foreground">{currentPaymentLink.reference}</span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Purpose</span>
-          <span className="font-medium text-foreground">{currentPaymentLink.purpose}</span>
-        </div>
-        <hr className="border-border my-2" />
-        <div className="flex justify-between">
+        <hr className="border-border my-2 !mt-3 !mb-3" />
+        <div className="flex justify-between items-baseline">
           <span className="text-muted-foreground">Total</span>
-          <span className="font-medium text-foreground text-lg">{currentPaymentLink.currency} {parseFloat(currentPaymentLink.amount).toFixed(2)}</span>
+          <span className="font-bold text-foreground text-xl">{currentPaymentLink.currency} {parseFloat(currentPaymentLink.amount).toFixed(2)}</span>
         </div>
         {currentPaymentLink.hasExpiry && currentPaymentLink.expiryDate && (
-          <div className="flex justify-between">
+          <div className="flex justify-between text-xs">
             <span className="text-muted-foreground">Due by</span>
-            <span className="font-medium text-foreground">{format(new Date(currentPaymentLink.expiryDate), 'PPP')}</span>
+            <span className="font-medium text-muted-foreground">{format(new Date(currentPaymentLink.expiryDate), 'PPP')}</span>
           </div>
         )}
       </div>
 
-      <RadioGroup
-        value={selectedPaymentMethod}
-        onValueChange={setSelectedPaymentMethod}
-        className="space-y-3"
-        aria-label="Payment method"
-      >
-        {paymentOptions.map((option) => (
-          <Label
-            key={option.value}
-            htmlFor={option.value}
-            className={`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors
-              ${selectedPaymentMethod === option.value ? 'border-primary ring-2 ring-primary bg-primary/5' : 'border-border hover:bg-secondary/50'}`}
-          >
-            <RadioGroupItem value={option.value} id={option.value} className="shrink-0" />
-            <div className="flex-grow flex items-center space-x-2">
-              <option.icon className={`h-6 w-6 ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-muted-foreground'}`} />
-              <div>
-                <p className={`font-medium ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-foreground'}`}>{option.name}</p>
-                <p className={`text-xs ${selectedPaymentMethod === option.value ? 'text-primary/80' : 'text-muted-foreground'}`}>{option.description}</p>
-              </div>
-            </div>
-          </Label>
-        ))}
-      </RadioGroup>
+      {!selectedPaymentMethod && (
+         <RadioGroup
+            value={selectedPaymentMethod}
+            onValueChange={setSelectedPaymentMethod}
+            className="space-y-3"
+            aria-label="Payment method"
+        >
+            {paymentOptions.map((option) => (
+            <Label
+                key={option.value}
+                htmlFor={option.value}
+                className={`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors
+                ${selectedPaymentMethod === option.value ? 'border-primary ring-2 ring-primary bg-primary/5' : 'border-border hover:bg-secondary/50'}`}
+            >
+                <RadioGroupItem value={option.value} id={option.value} className="shrink-0" />
+                <div className="flex-grow flex items-center space-x-2">
+                <option.icon className={`h-6 w-6 ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-muted-foreground'}`} />
+                <div>
+                    <p className={`font-medium ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-foreground'}`}>{option.name}</p>
+                    <p className={`text-xs ${selectedPaymentMethod === option.value ? 'text-primary/80' : 'text-muted-foreground'}`}>{option.description}</p>
+                </div>
+                </div>
+            </Label>
+            ))}
+        </RadioGroup>
+      )}
 
-      <Button 
-        onClick={handlePayment} 
-        className="w-full h-12 text-base rounded-lg" 
-        disabled={!selectedPaymentMethod || isProcessing}
-      >
-        {isProcessing ? <Spinner className="mr-2" /> : null}
-        {isProcessing ? 'Processing...' : `Pay Now (${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)})`}
-      </Button>
+
+      {selectedPaymentMethod === 'mpesa' && (
+        <div className="space-y-4">
+            <p className="text-base font-medium text-foreground">M-Pesa Details</p>
+            <div>
+                <Label htmlFor="mpesaPhoneNumber" className="text-sm font-medium text-muted-foreground">Phone Number</Label>
+                <Input
+                    id="mpesaPhoneNumber"
+                    type="tel"
+                    placeholder="Enter phone number"
+                    value={mpesaPhoneNumber}
+                    onChange={(e) => setMpesaPhoneNumber(e.target.value)}
+                    className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
+                />
+            </div>
+        </div>
+      )}
+
+      {selectedPaymentMethod === 'card' && (
+        <div className="space-y-4 text-center">
+           {/* Placeholder for card form or info. For now, direct payment. */}
+           <p className="text-muted-foreground">You've selected to pay by card.</p>
+        </div>
+      )}
+
+
+      {selectedPaymentMethod && (
+        <Button 
+            onClick={handlePayment} 
+            className="w-full h-12 text-base rounded-lg" 
+            disabled={isProcessing || (selectedPaymentMethod === 'mpesa' && !mpesaPhoneNumber)}
+        >
+            {isProcessing ? <Spinner className="mr-2" /> : null}
+            {isProcessing ? 'Processing...' : 
+             selectedPaymentMethod === 'mpesa' ? `Pay with M-Pesa (${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)})` :
+             selectedPaymentMethod === 'card' ? `Pay with Card (${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)})` :
+            `Pay Now (${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)})`
+            }
+        </Button>
+      )}
+       {selectedPaymentMethod && (
+         <Button 
+            variant="link" 
+            onClick={() => setSelectedPaymentMethod(undefined)} 
+            className="w-full text-muted-foreground hover:text-primary"
+            disabled={isProcessing}
+          >
+            Change payment method
+        </Button>
+       )}
     </div>
   );
 };
@@ -286,3 +344,4 @@ const PaymentForOrderPage: NextPage = () => {
 };
 
 export default PaymentForOrderPage;
+
