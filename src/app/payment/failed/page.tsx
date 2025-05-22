@@ -8,23 +8,31 @@ import { Button } from '@/components/ui/button';
 import { CenteredCardLayout } from '@/components/layouts/centered-card-layout';
 import { PaymentDetailsDisplay } from '@/components/payment/payment-details-card';
 import type { PaymentDetails } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
 
 // Dummy data
 const failedPayment: PaymentDetails = {
   reference: 'PMT789012',
-  name: 'John Doe Services',
+  name: 'Pesi X Services',
   amount: 'KES 2,500.00',
-  date: '2023-10-28',
+  date: new Date().toLocaleDateString(), // Use current date
   status: 'Failed',
+  paymentReason: 'Transaction declined by bank. Insufficient funds.', // Added reason for failure
 };
 
 const PaymentFailedPage: NextPage = () => {
   const router = useRouter();
+  const { toast } = useToast();
 
   const handleRetry = () => {
     // Navigate to a retry URL or previous payment page
     // For now, let's go to a generic complete payment page
-    router.push('/payment/complete-basic'); 
+    // In a real app, you'd likely pass the payment link ID or order ID
+    toast({
+      title: "Retrying Payment (Mock)",
+      description: "Redirecting to payment page...",
+    });
+    router.push('/payment/complete-basic'); // Example: Redirect to basic payment page
   };
 
   return (
@@ -33,7 +41,8 @@ const PaymentFailedPage: NextPage = () => {
         <XCircle className="h-20 w-20 text-destructive" />
         <h2 className="text-3xl font-semibold text-destructive">Payment Failed</h2>
         <p className="text-muted-foreground">
-          Unfortunately, your payment could not be processed. Please find the details below.
+          Unfortunately, your payment could not be processed. 
+          {failedPayment.paymentReason ? ` Reason: ${failedPayment.paymentReason}` : "Please try again or contact support."}
         </p>
         
         <div className="w-full border rounded-md p-4 bg-destructive/5">

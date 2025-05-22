@@ -8,22 +8,29 @@ import { Button } from '@/components/ui/button';
 import { CenteredCardLayout } from '@/components/layouts/centered-card-layout';
 import { PaymentDetailsDisplay } from '@/components/payment/payment-details-card';
 import type { PaymentDetails } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
 
 // Dummy data
 const successfulPayment: PaymentDetails = {
   reference: 'PMT123456',
-  name: 'SwitchLink Services',
+  name: 'Pesi X Services',
   amount: 'KES 10,000.00',
-  date: '2023-10-28',
+  date: new Date().toLocaleDateString(), // Use current date
   status: 'Successful',
 };
 
 const PaymentSuccessfulPage: NextPage = () => {
   const router = useRouter();
+  const { toast } = useToast();
 
   const handleViewReceipt = () => {
     // Navigate to a receipt page or open a PDF
-    alert('Viewing receipt for ' + successfulPayment.reference);
+    toast({
+      title: "Receipt Generated (Mock)",
+      description: `Receipt for transaction ${successfulPayment.reference} would be displayed here.`,
+    });
+    // In a real app, you might redirect to a receipt page or trigger a download
+    // router.push(`/receipt/${successfulPayment.reference}`); 
   };
 
   return (
@@ -39,7 +46,10 @@ const PaymentSuccessfulPage: NextPage = () => {
            <PaymentDetailsDisplay details={successfulPayment} />
         </div>
 
-        <Button onClick={handleViewReceipt} className="w-full bg-green-600 hover:bg-green-700 text-white">
+        <Button 
+          onClick={handleViewReceipt} 
+          className="w-full bg-green-600 hover:bg-green-700 text-primary-foreground"
+        >
           View Receipt
         </Button>
          <Button onClick={() => router.push('/dashboard')} className="w-full" variant="outline">

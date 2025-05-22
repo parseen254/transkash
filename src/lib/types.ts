@@ -9,7 +9,7 @@ export interface UserProfile {
   firstName?: string;
   lastName?: string;
   displayName?: string | null;
-  personalPhone?: string; // Renamed from 'phone'
+  personalPhone?: string; 
   photoURL?: string | null;
   createdAt?: Timestamp | Date;
   updatedAt?: Timestamp | Date;
@@ -28,7 +28,7 @@ export interface UserProfile {
 
 export interface PayoutAccount {
   id: string; // Firestore document ID
-  userId: string; // Belongs to which user
+  userId?: string; // Belongs to which user
   accountName: string;
   accountNumber: string; // Should be stored securely, consider masking for display
   bankName: string;
@@ -36,23 +36,23 @@ export interface PayoutAccount {
   bankCode?: string;
   bankSwiftCode?: string;
   status: 'Active' | 'Pending' | 'Disabled';
-  createdAt: Timestamp | Date;
+  createdAt?: Timestamp | Date;
   updatedAt?: Timestamp | Date;
 }
 
 export interface PaymentLink {
   id: string; // Firestore document ID
-  userId: string; // Belongs to which user
+  userId?: string; // Belongs to which user
   linkName: string;
   reference: string;
   amount: string; // Consider storing as number (e.g. cents) for precision
-  currency: string; // e.g., KES, USD
+  currency?: string; // e.g., KES, USD
   purpose: string;
-  creationDate: Timestamp | Date; // Firestore timestamp
-  expiryDate?: Timestamp | Date; // Optional
+  creationDate: string | Timestamp | Date; // Allow string for dummy data, Firestore for real
+  expiryDate?: string | Timestamp | Date; // Optional
   status: 'Active' | 'Expired' | 'Disabled' | 'Paid';
   payoutAccountId?: string; // ID of the payout account
-  payoutAccount?: string; // ID of the payout account - TEMPORARY for edit form
+  payoutAccount?: string; // TEMPORARY for edit form, should be ID
   shortUrl?: string; // The actual shareable link
   updatedAt?: Timestamp | Date;
 }
@@ -63,7 +63,7 @@ export interface PaymentDetails {
   amount: string; // Formatted amount with currency
   date: string; // Formatted date string
   status?: 'Successful' | 'Failed' | 'Pending';
-  paymentReason?: string;
+  paymentReason?: string; // Optional reason for failure/status
 }
 
 export interface Transaction {
@@ -72,12 +72,10 @@ export interface Transaction {
   customer: string;
   amount: string; // Formatted amount for display
   status: 'Completed' | 'Pending' | 'Failed';
-  // Add other necessary fields that PaymentLink has if this is derived from it
   userId: string;
   currency: string;
-  linkName: string;
-  purpose: string;
+  linkName:string;
+  purpose:string;
   creationDate: Date | Timestamp;
   reference: string;
 }
-
