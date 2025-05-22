@@ -5,7 +5,7 @@ import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Edit, Trash2, Copy, Eye, DollarSign, CalendarDays, FileText, LinkIcon, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Copy, Eye, DollarSign, CalendarDays, FileText, LinkIcon as LinkIconLucide, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -37,10 +37,10 @@ import { cn } from '@/lib/utils';
 
 // Dummy Data (replace with actual data fetching)
 const dummyPaymentLinks: PaymentLink[] = [
-  { id: 'pl_1', linkName: 'Invoice #1234', reference: 'INV001', amount: 'KES 5,000', currency: 'KES', purpose: 'Consultation Services', creationDate: new Date('2023-10-01').toISOString(), expiryDate: new Date('2023-10-15').toISOString(), status: 'Active', payoutAccountId: 'acc_1', shortUrl: 'https://switch.link/pay/pl_1', hasExpiry: true },
-  { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: 'KES 1,500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: new Date('2023-10-05').toISOString(), expiryDate: new Date('2023-11-05').toISOString(), status: 'Paid', payoutAccountId: 'acc_1', shortUrl: 'https://switch.link/pay/pl_2', hasExpiry: true },
-  { id: 'pl_3', linkName: 'Monthly Subscription', reference: 'SUB003', amount: 'KES 2,000', currency: 'KES', purpose: 'SaaS Subscription', creationDate: new Date('2023-09-20').toISOString(), status: 'Expired', payoutAccountId: 'acc_2', shortUrl: 'https://switch.link/pay/pl_3', hasExpiry: true, expiryDate: new Date('2023-10-20').toISOString() },
-  { id: 'pl_4', linkName: 'Donation Drive', reference: 'DON001', amount: 'KES 500', currency: 'KES', purpose: 'Charity Fundraiser', creationDate: new Date('2023-11-05').toISOString(), status: 'Disabled', payoutAccountId: 'acc_1', shortUrl: 'https://switch.link/pay/pl_4', hasExpiry: false },
+  { id: 'pl_1', linkName: 'Invoice #1234', reference: 'INV001', amount: '5000', currency: 'KES', purpose: 'Consultation Services', creationDate: new Date('2023-10-01').toISOString(), expiryDate: new Date('2023-10-15').toISOString(), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_1', hasExpiry: true },
+  { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: '1500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: new Date('2023-10-05').toISOString(), expiryDate: new Date('2023-11-05').toISOString(), status: 'Paid', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_2', hasExpiry: true },
+  { id: 'pl_3', linkName: 'Monthly Subscription', reference: 'SUB003', amount: '2000', currency: 'KES', purpose: 'SaaS Subscription', creationDate: new Date('2023-09-20').toISOString(), status: 'Expired', payoutAccountId: 'acc_2', shortUrl: '/payment/order?paymentLinkId=pl_3', hasExpiry: true, expiryDate: new Date('2023-10-20').toISOString() },
+  { id: 'pl_4', linkName: 'Donation Drive', reference: 'DON001', amount: '500', currency: 'KES', purpose: 'Charity Fundraiser', creationDate: new Date('2023-11-05').toISOString(), status: 'Disabled', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_4', hasExpiry: false },
 ];
 
 const dummyTransactions: Transaction[] = [
@@ -106,8 +106,11 @@ const PaymentLinkDetailsPage: NextPage = () => {
 
   const handleCopyLink = () => {
     if (paymentLink?.shortUrl) {
-      navigator.clipboard.writeText(paymentLink.shortUrl);
-      toast({ title: "Link Copied!", description: "Shareable link copied to clipboard." });
+      // For testing local paths, construct the full URL.
+      // In a real deployment, shortUrl would be a full HTTPS URL.
+      const fullUrl = window.location.origin + paymentLink.shortUrl;
+      navigator.clipboard.writeText(fullUrl);
+      toast({ title: "Link Copied!", description: `Shareable link ${fullUrl} copied to clipboard.` });
     }
   };
 
@@ -187,9 +190,11 @@ const PaymentLinkDetailsPage: NextPage = () => {
       <div>
         <p className="text-sm text-muted-foreground">{label}</p>
         {isLink && value ? (
-          <a href={linkHref || value?.toString()} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline break-all">
-            {value}
-          </a>
+          <Link href={linkHref || value?.toString() || '#'} legacyBehavior>
+            <a target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline break-all">
+                {value}
+            </a>
+          </Link>
         ) : (
           <p className="text-sm font-medium text-foreground break-all">{value || 'N/A'}</p>
         )}
@@ -266,7 +271,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
             {paymentLink.hasExpiry && paymentLink.expiryDate && (
               <InfoItem icon={CalendarDays} label="Expiry Date" value={format(new Date(paymentLink.expiryDate as string), 'PPP p')} />
             )}
-            <InfoItem icon={LinkIcon} label="Shareable Link" value={paymentLink.shortUrl} isLink />
+            <InfoItem icon={LinkIconLucide} label="Shareable Link (Test)" value={paymentLink.shortUrl} isLink />
           </CardContent>
         </Card>
 
@@ -361,3 +366,4 @@ const PaymentLinkDetailsPage: NextPage = () => {
 };
 
 export default PaymentLinkDetailsPage;
+
