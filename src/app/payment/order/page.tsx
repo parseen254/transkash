@@ -4,7 +4,7 @@
 import type { NextPage } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
-import { HelpCircle, Smartphone, CreditCard, Receipt, AlertCircle } from 'lucide-react'; // Updated import
+import { HelpCircle, Smartphone, CreditCard, Receipt, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLogo } from '@/components/shared/app-logo';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -33,7 +33,7 @@ interface PaymentOption {
 
 const paymentOptions: PaymentOption[] = [
   { value: 'mpesa_stk', name: 'M-Pesa (STK Push)', description: 'Pay with M-Pesa STK Push', icon: Smartphone },
-  { value: 'mpesa_paybill', name: 'M-Pesa (Paybill)', description: 'Pay using M-Pesa Paybill', icon: Receipt }, // Changed icon here
+  { value: 'mpesa_paybill', name: 'M-Pesa (Paybill)', description: 'Pay using M-Pesa Paybill', icon: Receipt },
   { value: 'card', name: 'Card Transfer', description: 'Pay with Card Transfer', icon: CreditCard },
 ];
 
@@ -51,6 +51,12 @@ const PaymentForOrderContent: React.FC = () => {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | undefined>(undefined);
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Card details state
+  const [cardNumber, setCardNumber] = useState('');
+  const [expiryMonth, setExpiryMonth] = useState('');
+  const [expiryYear, setExpiryYear] = useState('');
+  const [cvv, setCvv] = useState('');
 
   useEffect(() => {
     const paymentLinkId = searchParams.get('paymentLinkId');
@@ -90,7 +96,7 @@ const PaymentForOrderContent: React.FC = () => {
 
     setIsProcessing(true);
     toast({ title: "Processing Payment", description: "Please wait..." });
-    await new Promise(resolve => setTimeout(resolve, 500)); // Small delay for UX
+    await new Promise(resolve => setTimeout(resolve, 500)); 
 
     let paymentSuccessful = false;
     const numericAmount = parseFloat(currentPaymentLink.amount);
@@ -135,10 +141,22 @@ const PaymentForOrderContent: React.FC = () => {
         toast({ title: "Paybill Request Failed", description: "Could not reach Paybill confirmation service.", variant: "destructive" });
       }
     } else if (selectedPaymentMethod === 'card') {
+       if (!cardNumber || !expiryMonth || !expiryYear || !cvv) {
+        toast({ title: "Missing Card Details", description: "Please fill in all card information.", variant: "destructive" });
+        setIsProcessing(false);
+        return;
+       }
        try {
         const response = await fetch('/api/card/authorize-payment', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cardNumber: "************1234", expiryMonth: "12", expiryYear: "2025", cvv: "123", amount: numericAmount, currency: currentPaymentLink.currency || 'KES' }),
+          body: JSON.stringify({ 
+            cardNumber, 
+            expiryMonth, 
+            expiryYear, 
+            cvv, 
+            amount: numericAmount, 
+            currency: currentPaymentLink.currency || 'KES' 
+          }),
         });
         if (response.ok) {
           const result = await response.json();
@@ -179,6 +197,8 @@ const PaymentForOrderContent: React.FC = () => {
   }
   
   const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
+
+  const isCardFormValid = cardNumber.trim() !== '' && expiryMonth.trim() !== '' && expiryYear.trim() !== '' && cvv.trim() !== '';
 
   return (
     <div className="w-full max-w-md space-y-6">
@@ -256,16 +276,42 @@ const PaymentForOrderContent: React.FC = () => {
                 <li>Enter your M-Pesa PIN and confirm</li>
             </ul>
             <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing}>
-                {isProcessing ? <Spinner className="mr-2" /> : <Receipt className="mr-2 h-5 w-5" />} {/* Changed icon here */}
+                {isProcessing ? <Spinner className="mr-2" /> : <Receipt className="mr-2 h-5 w-5" />}
                 {isProcessing ? 'Confirming...' : "I've sent the money"}
             </Button>
         </div>
       )}
 
       {selectedPaymentMethod === 'card' && (
-        <div className="space-y-4 text-center">
-           <p className="text-muted-foreground">You've selected to pay by card.</p>
-            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing}>
+        <div className="space-y-4">
+           <p className="text-base font-medium text-foreground">Card Details</p>
+           <div>
+                <Label htmlFor="cardNumber" className="text-sm font-medium text-muted-foreground">Card Number</Label>
+                <Input id="cardNumber" type="text" placeholder="0000 0000 0000 0000" value={cardNumber}
+                    onChange={(e) => setCardNumber(e.target.value)} maxLength={19}
+                    className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
+           </div>
+           <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-1">
+                    <Label htmlFor="expiryMonth" className="text-sm font-medium text-muted-foreground">Expiry MM</Label>
+                    <Input id="expiryMonth" type="text" placeholder="MM" value={expiryMonth}
+                        onChange={(e) => setExpiryMonth(e.target.value)} maxLength={2}
+                        className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
+                </div>
+                 <div className="col-span-1">
+                    <Label htmlFor="expiryYear" className="text-sm font-medium text-muted-foreground">Expiry YYYY</Label>
+                    <Input id="expiryYear" type="text" placeholder="YYYY" value={expiryYear}
+                        onChange={(e) => setExpiryYear(e.target.value)} maxLength={4}
+                        className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
+                </div>
+                <div className="col-span-1">
+                    <Label htmlFor="cvv" className="text-sm font-medium text-muted-foreground">CVV</Label>
+                    <Input id="cvv" type="text" placeholder="123" value={cvv}
+                        onChange={(e) => setCvv(e.target.value)} maxLength={4}
+                        className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
+                </div>
+           </div>
+            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing || !isCardFormValid}>
                 {isProcessing ? <Spinner className="mr-2" /> : <CreditCard className="mr-2 h-5 w-5" />}
                 {isProcessing ? 'Processing...' : `Pay with Card`}
             </Button>
@@ -308,5 +354,3 @@ const PaymentForOrderPage: NextPage = () => {
 
 export default PaymentForOrderPage;
 
-
-    
