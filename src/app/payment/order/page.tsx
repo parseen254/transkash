@@ -52,7 +52,7 @@ const PaymentForOrderContent: React.FC = () => {
 
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | undefined>(undefined);
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
-  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false); // Used briefly before redirect
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState(''); // MM/YY format
@@ -90,10 +90,16 @@ const PaymentForOrderContent: React.FC = () => {
 
   const isCardFormValid = useCallback(() => {
     const expiryPattern = /^(0[1-9]|1[0-2])\/\d{2}$/; // MM/YY
+    if (!expiryPattern.test(cardExpiry)) return false;
+    const [monthStr, yearStr] = cardExpiry.split('/');
+    const parsedFullYear = `20${yearStr}`; // Assumes 21st century
+    const expiryDateObject = parse(`${monthStr}/01/${parsedFullYear}`, 'MM/dd/yyyy', new Date());
+    
     return (
       cardNumber.replace(/\s/g, '').length >= 13 &&
-      expiryPattern.test(cardExpiry) &&
-      cvv.length >= 3 && cvv.length <= 4
+      cvv.length >= 3 && cvv.length <= 4 &&
+      isValid(expiryDateObject) && 
+      isFuture(new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() + 1, 0 )) // Check end of expiry month
     );
   }, [cardNumber, cardExpiry, cvv]);
 
@@ -112,21 +118,10 @@ const PaymentForOrderContent: React.FC = () => {
       toast({ title: "Invalid Card Details", description: "Please check your card information and try again.", variant: "destructive" });
       return;
     }
-    if (selectedPaymentMethod === 'card') {
-        const [monthStr, yearStr] = cardExpiry.split('/');
-        const parsedFullYear = `20${yearStr}`;
-        const expiryDateObject = parse(`${monthStr}/01/${parsedFullYear}`, 'MM/dd/yyyy', new Date());
-        if (!isValid(expiryDateObject) || !isFuture(new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() + 1, 0 ))) {
-            toast({ title: "Invalid Expiry Date", description: "Card expiry date is in the past or invalid.", variant: "destructive" });
-            return;
-        }
-    }
-
 
     setIsSubmittingPayment(true);
-    toast({ title: "Initiating Payment", description: "Redirecting to payment processor..." });
+    toast({ title: "Initiating Payment", description: "Please wait..." });
 
-    // Construct query parameters for the processing page
     const queryParams = new URLSearchParams({
       paymentLinkId: currentPaymentLink.id,
       method: selectedPaymentMethod,
@@ -137,28 +132,40 @@ const PaymentForOrderContent: React.FC = () => {
 
     if (selectedPaymentMethod === 'mpesa_stk') {
       queryParams.append('mpesaPhoneNumber', mpesaPhoneNumber);
+      const redactedPhone = `${mpesaPhoneNumber.substring(0, 2)}****${mpesaPhoneNumber.substring(mpesaPhoneNumber.length - 4)}`;
+      queryParams.append('mpesaPhoneNumberDisplay', redactedPhone);
     } else if (selectedPaymentMethod === 'card') {
-      queryParams.append('cardNumber', cardNumber.replace(/\s/g, ''));
-      queryParams.append('cardExpiry', cardExpiry);
-      queryParams.append('cvv', cvv);
+      queryParams.append('cardNumber', cardNumber.replace(/\s/g, '')); // Send full card number to processing page (mock API needs it)
+      const displayCardNum = `**** **** **** ${cardNumber.replace(/\s/g, '').slice(-4)}`;
+      queryParams.append('displayCardNumber', displayCardNum);
+      // DO NOT pass cardExpiry or cvv in query params for security
+      // The processing page will use mock values for these for the mock API call
     }
 
-    // Redirect to the processing page
     router.push(`/payment/processing?${queryParams.toString()}`);
-    // setIsSubmittingPayment(false); // Not strictly needed as we are redirecting
   };
 
   const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, '');
-    if (value.length > 4) value = value.slice(0, 4);
+    let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+    if (value.length > 4) value = value.slice(0, 4); // MMYY format limit
 
     if (value.length > 2) {
+      // Format as MM/YY
       value = `${value.slice(0, 2)}/${value.slice(2)}`;
     } else if (value.length === 2 && cardExpiry.length === 1 && !cardExpiry.includes('/')) {
+      // Auto-add slash after MM if user is typing and hasn't added one
       value = `${value}/`;
     }
     setCardExpiry(value);
   };
+
+  const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value.replace(/\s/g, ''); // Remove existing spaces
+    if (rawValue.length > 19) return; // Max card length
+    const formattedValue = rawValue.replace(/(\d{4})/g, '$1 ').trim(); // Add space every 4 digits
+    setCardNumber(formattedValue);
+  };
+
 
   if (loadingLink) {
     return (
@@ -182,7 +189,7 @@ const PaymentForOrderContent: React.FC = () => {
 
   const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
   let payButtonText = "Proceed to Payment";
-  let PayButtonIcon = CreditCard; // Default or fallback
+  let PayButtonIcon = CreditCard;
 
   if (selectedPaymentMethod === 'card') {
     payButtonText = `Pay ${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)}`;
@@ -282,7 +289,7 @@ const PaymentForOrderContent: React.FC = () => {
            <div>
                 <Label htmlFor="cardNumber" className="text-sm font-medium text-muted-foreground">Card Number</Label>
                 <Input id="cardNumber" type="text" placeholder="0000 0000 0000 0000" value={cardNumber}
-                    onChange={(e) => setCardNumber(e.target.value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim())} maxLength={19}
+                    onChange={handleCardNumberChange} maxLength={23} // Max length for formatted (incl. spaces)
                     autoComplete="cc-number"
                     className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
            </div>
@@ -308,7 +315,7 @@ const PaymentForOrderContent: React.FC = () => {
       {selectedPaymentMethod && (
         <>
             <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg"
-                    disabled={isSubmittingPayment || (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber) || (selectedPaymentMethod === 'card' && !isCardFormValid())}>
+                    disabled={isSubmittingPayment || (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?(7\d{8})$/)) || (selectedPaymentMethod === 'card' && !isCardFormValid())}>
                 {isSubmittingPayment ? <Spinner className="mr-2" /> : <PayButtonIcon className="mr-2 h-5 w-5" />}
                 {isSubmittingPayment ? 'Processing...' : payButtonText}
             </Button>

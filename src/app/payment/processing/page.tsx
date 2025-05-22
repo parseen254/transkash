@@ -16,11 +16,10 @@ interface PaymentProcessingContentProps {
   amount: string | null;
   currency: string | null;
   reference: string | null;
-  // Props for specific payment methods
-  mpesaPhoneNumber?: string | null;
-  cardNumber?: string | null;
-  cardExpiry?: string | null; // MM/YY
-  cvv?: string | null;
+  mpesaPhoneNumber?: string | null; // Full phone number for API
+  mpesaPhoneNumberDisplay?: string | null; // Redacted for display
+  cardNumber?: string | null; // Full card number for API
+  displayCardNumber?: string | null; // Redacted for display
 }
 
 const PaymentProcessingContent: React.FC<PaymentProcessingContentProps> = ({
@@ -30,9 +29,9 @@ const PaymentProcessingContent: React.FC<PaymentProcessingContentProps> = ({
   currency,
   reference,
   mpesaPhoneNumber,
+  mpesaPhoneNumberDisplay,
   cardNumber,
-  cardExpiry,
-  cvv,
+  displayCardNumber,
 }) => {
   const router = useRouter();
   const { toast } = useToast();
@@ -50,6 +49,12 @@ const PaymentProcessingContent: React.FC<PaymentProcessingContentProps> = ({
       let apiEndpoint = '';
       let requestBody: any = {};
 
+      // Mock Expiry and CVV for card payments, as they are not passed via URL for security
+      // THIS IS A MOCK SCENARIO ONLY. Real apps would handle this server-side or via tokenization.
+      const mockCardExpiryMonth = "12"; 
+      const mockCardExpiryYear = "2028"; 
+      const mockCardCvv = "123";
+
       if (method === 'mpesa_stk') {
         if (!mpesaPhoneNumber) {
             toast({ title: "Error", description: "M-Pesa phone number not provided for STK Push.", variant: "destructive" });
@@ -57,7 +62,7 @@ const PaymentProcessingContent: React.FC<PaymentProcessingContentProps> = ({
             return;
         }
         setProcessingMessage("STK Push sent. Please enter your M-Pesa PIN on your phone to complete the payment.");
-        await new Promise(resolve => setTimeout(resolve, 8000)); // Simulate user entering PIN + network time
+        await new Promise(resolve => setTimeout(resolve, 8000)); 
         apiEndpoint = '/api/mpesa/initiate-payment';
         requestBody = { phoneNumber: mpesaPhoneNumber, amount: parseFloat(amount), accountReference: reference, transactionDesc: `Payment for ${reference}` };
       } else if (method === 'mpesa_paybill') {
@@ -65,19 +70,20 @@ const PaymentProcessingContent: React.FC<PaymentProcessingContentProps> = ({
         apiEndpoint = '/api/mpesa/confirm-c2b';
         requestBody = { paymentLinkId, amount: parseFloat(amount), currency };
       } else if (method === 'card') {
-        if (!cardNumber || !cardExpiry || !cvv) {
+        if (!cardNumber) {
             toast({ title: "Error", description: "Card details not provided for payment processing.", variant: "destructive" });
             router.push(`/payment/failed?paymentLinkId=${paymentLinkId}&amount=${amount}&currency=${currency}&reference=${reference}&method=${method}`);
             return;
         }
-        const [expiryMonth, expiryYearSuffix] = cardExpiry.split('/');
-        const expiryYear = `20${expiryYearSuffix}`;
-
         setProcessingMessage("Authorizing your card...");
         apiEndpoint = '/api/card/authorize-payment';
         requestBody = {
-            cardNumber, expiryMonth, expiryYear, cvv,
-            amount: parseFloat(amount), currency
+            cardNumber, 
+            expiryMonth: mockCardExpiryMonth, 
+            expiryYear: mockCardExpiryYear, 
+            cvv: mockCardCvv,
+            amount: parseFloat(amount), 
+            currency
         };
       } else {
         toast({ title: "Error", description: "Invalid payment method specified.", variant: "destructive" });
@@ -93,16 +99,22 @@ const PaymentProcessingContent: React.FC<PaymentProcessingContentProps> = ({
         });
         const result = await response.json();
 
-        if (method === 'mpesa_stk' && result.ResponseCode === "0") success = true;
-        else if (method === 'mpesa_paybill' && result.ResultCode === "0") success = true;
-        else if (method === 'card' && result.result === "SUCCESS") success = true;
-        else {
-            const errorMsg = result.errorMessage || result.ResultDesc || result.error?.explanation || "Payment processing failed.";
+        if (response.ok) {
+            if (method === 'mpesa_stk' && result.ResponseCode === "0") success = true;
+            else if (method === 'mpesa_paybill' && result.ResultCode === "0") success = true;
+            else if (method === 'card' && result.result === "SUCCESS") success = true;
+            else {
+                 const errorMsg = result.errorMessage || result.ResultDesc || result.error?.explanation || "Payment processing failed.";
+                 toast({ title: "Payment Failed", description: errorMsg, variant: "destructive" });
+            }
+        } else {
+            const errorMsg = result.errorMessage || result.ResultDesc || result.error?.explanation || `Payment processing failed with status ${response.status}.`;
             toast({ title: "Payment Failed", description: errorMsg, variant: "destructive" });
         }
+
       } catch (error) {
         console.error("Payment processing API call error:", error);
-        toast({ title: "Error", description: "An error occurred while processing your payment.", variant: "destructive" });
+        toast({ title: "Error", description: "An error occurred while connecting to the payment service.", variant: "destructive" });
       }
 
       if (success) {
@@ -114,9 +126,18 @@ const PaymentProcessingContent: React.FC<PaymentProcessingContentProps> = ({
 
     processPayment();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount
+  }, []); 
 
-  const MethodIcon = method === 'mpesa_stk' ? Smartphone : method === 'mpesa_paybill' ? Receipt : CreditCard;
+  let MethodIcon = CreditCard;
+  let displayIdentifier = displayCardNumber;
+  if (method === 'mpesa_stk') {
+    MethodIcon = Smartphone;
+    displayIdentifier = mpesaPhoneNumberDisplay;
+  } else if (method === 'mpesa_paybill') {
+    MethodIcon = Receipt;
+    displayIdentifier = "Paybill";
+  }
+
 
   return (
     <div className="w-full max-w-md text-center space-y-6">
@@ -138,6 +159,12 @@ const PaymentProcessingContent: React.FC<PaymentProcessingContentProps> = ({
             {method?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
           </span>
         </div>
+        {displayIdentifier && method !== 'mpesa_paybill' && (
+            <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">{method === 'card' ? 'Card:' : 'Phone:'}</span>
+                <span className="font-medium text-foreground">{displayIdentifier}</span>
+            </div>
+        )}
       </div>
       <p className="text-muted-foreground text-xs">Please do not close or refresh this page.</p>
     </div>
@@ -154,9 +181,10 @@ const PaymentProcessingPageWrapper: React.FC = () => {
 
   // Payment method specific params
   const mpesaPhoneNumber = searchParams.get('mpesaPhoneNumber');
+  const mpesaPhoneNumberDisplay = searchParams.get('mpesaPhoneNumberDisplay');
   const cardNumber = searchParams.get('cardNumber');
-  const cardExpiry = searchParams.get('cardExpiry');
-  const cvv = searchParams.get('cvv');
+  const displayCardNumber = searchParams.get('displayCardNumber');
+  // CVV and Expiry are intentionally NOT read from query params for security
 
   return (
     <PaymentProcessingContent
@@ -166,9 +194,9 @@ const PaymentProcessingPageWrapper: React.FC = () => {
       currency={currency}
       reference={reference}
       mpesaPhoneNumber={mpesaPhoneNumber}
+      mpesaPhoneNumberDisplay={mpesaPhoneNumberDisplay}
       cardNumber={cardNumber}
-      cardExpiry={cardExpiry}
-      cvv={cvv}
+      displayCardNumber={displayCardNumber}
     />
   );
 };
@@ -193,3 +221,4 @@ const PaymentProcessingPage: NextPage = () => {
 };
 
 export default PaymentProcessingPage;
+
