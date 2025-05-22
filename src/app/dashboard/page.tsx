@@ -9,49 +9,34 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip } from 'recharts';
-import type { Transaction } from '@/lib/types';
+import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { useEffect, useState } from 'react';
-import { collection, query, where, orderBy, limit, onSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 
 interface StatCardData {
   title: string;
   value: string;
   change: string;
-  positiveChange?: boolean;
+  positiveChange?: boolean; // Make positiveChange optional
 }
 
-const statData: StatCardData[] = [
+interface AggregatedProductData {
+  name: string;
+  value: number; // Percentage for progress bar
+  displayValue?: string; // Actual monetary value or count
+}
+
+const initialStatData: StatCardData[] = [
   { title: 'Total Revenue', value: 'KES 0.00', change: 'N/A' },
   { title: 'Avg. Transaction Value', value: 'KES 0.00', change: 'N/A' },
-  { title: 'Customer Retention Rate', value: '0%', change: 'N/A' },
-];
-
-const monthlyRevenueChartData: { month: string, revenue: number }[] = [
-  // Dummy data for chart, uncomment to see
-  // { month: 'Jan', revenue: 1500 }, { month: 'Feb', revenue: 1800 }, { month: 'Mar', revenue: 1300 },
-  // { month: 'Apr', revenue: 2200 }, { month: 'May', revenue: 2000 }, { month: 'Jun', revenue: 2800 },
-  // { month: 'Jul', revenue: 2500 },
-];
-
-const quarterlySalesChartData: { name: string, sales: number }[] = [
-  // Dummy data for chart, uncomment to see
-  // { name: 'Q1', sales: 8000 }, { name: 'Q2', sales: 12000 },
-  // { name: 'Q3', sales: 9500 }, { name: 'Q4', sales: 15000 },
-];
-
-interface TopProductData {
-  name: string;
-  value: number; 
-}
-const topSellingProductsData: TopProductData[] = [
-  // Dummy data for chart, uncomment to see
-  // { name: 'Product A', value: 80 }, { name: 'Product B', value: 60 }, { name: 'Product C', value: 40 },
+  { title: 'Customer Retention Rate', value: '0%', change: 'N/A' }, // Remains placeholder
 ];
 
 const monthlyRevenueChartConfig = { revenue: { label: "Revenue", color: "hsl(var(--chart-1))" } } satisfies ChartConfig;
@@ -64,15 +49,17 @@ const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: ()
     <p className="text-xs text-muted-foreground max-w-[280px]">
       There is currently no data to display for this chart.
     </p>
-    <Button 
-      variant="secondary" 
-      size="sm" 
-      className="rounded-full px-3 h-8 text-xs"
-      onClick={onRefreshClick}
-    >
-      <RefreshCw className="mr-1.5 h-3 w-3" />
-      Refresh
-    </Button>
+    {onRefreshClick && (
+        <Button 
+            variant="secondary" 
+            size="sm" 
+            className="rounded-full px-3 h-8 text-xs"
+            onClick={onRefreshClick}
+        >
+            <RefreshCw className="mr-1.5 h-3 w-3" />
+            Refresh
+        </Button>
+    )}
   </div>
 );
 
@@ -80,23 +67,31 @@ const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: ()
 const DashboardPage: NextPage = () => {
   const { user, loading: authLoading, initialLoadComplete } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
+
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-  const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [loadingRecentTransactions, setLoadingRecentTransactions] = useState(true);
 
+  const [statData, setStatData] = useState<StatCardData[]>(initialStatData);
+  const [monthlyRevenueData, setMonthlyRevenueData] = useState<{ month: string; revenue: number }[]>([]);
+  const [quarterlySalesData, setQuarterlySalesData] = useState<{ name: string; sales: number }[]>([]);
+  const [topSellingProductsData, setTopSellingProductsData] = useState<AggregatedProductData[]>([]);
+  const [loadingStatsAndCharts, setLoadingStatsAndCharts] = useState(true);
+
+  // Fetch latest 5 transactions for the table (real-time)
   useEffect(() => {
-    if (!initialLoadComplete) return;
-
-    if (!user) {
-      router.push('/login');
+    if (!initialLoadComplete || !user) {
+      if (initialLoadComplete && !user) router.push('/login');
+      setLoadingRecentTransactions(!initialLoadComplete || authLoading);
       return;
     }
 
-    setLoadingTransactions(true);
+    setLoadingRecentTransactions(true);
     const transactionsCollection = collection(db, 'transactions');
     const q = query(
       transactionsCollection, 
       where('userId', '==', user.uid), 
-      orderBy('createdAt', 'desc'), // Order by server timestamp
+      orderBy('createdAt', 'desc'),
       limit(5)
     );
 
@@ -106,14 +101,137 @@ const DashboardPage: NextPage = () => {
         fetchedTransactions.push({ id: docSnap.id, ...docSnap.data() } as Transaction);
       });
       setRecentTransactions(fetchedTransactions);
-      setLoadingTransactions(false);
+      setLoadingRecentTransactions(false);
     }, (error) => {
       console.error("Error fetching recent transactions: ", error);
-      setLoadingTransactions(false);
+      toast({title: "Error", description: "Could not load recent transactions.", variant: "destructive"})
+      setLoadingRecentTransactions(false);
     });
 
     return () => unsubscribe();
-  }, [user, initialLoadComplete, router]);
+  }, [user, initialLoadComplete, authLoading, router, toast]);
+
+  // Fetch and aggregate data for stats and charts (one-time fetch on load/user change)
+  const fetchDataForStatsAndCharts = async () => {
+    if (!user) return;
+    setLoadingStatsAndCharts(true);
+
+    try {
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      const oneYearAgoTimestamp = Timestamp.fromDate(oneYearAgo);
+
+      const transactionsQuery = query(
+        collection(db, 'transactions'),
+        where('userId', '==', user.uid),
+        where('status', '==', 'Completed'),
+        where('createdAt', '>=', oneYearAgoTimestamp),
+        orderBy('createdAt', 'asc')
+      );
+      const transactionsSnapshot = await getDocs(transactionsQuery);
+      const completedTransactions: Transaction[] = [];
+      transactionsSnapshot.forEach(doc => {
+        completedTransactions.push({ id: doc.id, ...doc.data() } as Transaction);
+      });
+
+      // --- Aggregate for Stat Cards ---
+      let totalRevenue = 0;
+      completedTransactions.forEach(txn => { totalRevenue += txn.amount; });
+      const avgTxnValue = completedTransactions.length > 0 ? totalRevenue / completedTransactions.length : 0;
+      
+      setStatData([
+        { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}`, change: totalRevenue > 0 ? '+5%' : 'N/A', positiveChange: totalRevenue > 0 }, // Dummy change
+        { title: 'Avg. Transaction Value', value: `KES ${avgTxnValue.toFixed(2)}`, change: avgTxnValue > 0 ? '+2%' : 'N/A', positiveChange: avgTxnValue > 0 }, // Dummy change
+        { title: 'Customer Retention Rate', value: '0%', change: 'N/A' },
+      ]);
+
+      // --- Aggregate for Monthly Revenue Chart ---
+      const last12MonthsKeys: string[] = [];
+      const last12MonthLabels: string[] = [];
+      for (let i = 11; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(1);
+          d.setMonth(d.getMonth() - i);
+          last12MonthsKeys.push(format(d, 'yyyy-MM'));
+          last12MonthLabels.push(format(d, 'MMM'));
+      }
+      const monthlyAgg: { [key: string]: number } = {};
+      last12MonthsKeys.forEach(key => monthlyAgg[key] = 0);
+      completedTransactions.forEach(txn => {
+        if (txn.createdAt instanceof Timestamp) {
+          const date = txn.createdAt.toDate();
+          const monthKey = format(date, 'yyyy-MM');
+          if (monthlyAgg.hasOwnProperty(monthKey)) {
+            monthlyAgg[monthKey] += txn.amount;
+          }
+        }
+      });
+      setMonthlyRevenueData(last12MonthsKeys.map((key, index) => ({
+          month: last12MonthLabels[index],
+          revenue: monthlyAgg[key]
+      })));
+      
+      // --- Aggregate for Quarterly Sales Chart ---
+      const quarterlyAgg: { [key: string]: { sales: number; quarterLabel: string } } = {};
+      for (let i = 3; i >= 0; i--) {
+          const dateForQuarter = new Date();
+          dateForQuarter.setMonth(dateForQuarter.getMonth() - (i * 3));
+          const year = dateForQuarter.getFullYear();
+          const qNum = Math.floor(dateForQuarter.getMonth() / 3) + 1;
+          const quarterKey = `${year}-Q${qNum}`;
+          quarterlyAgg[quarterKey] = { sales: 0, quarterLabel: `Q${qNum} ${year}` };
+      }
+      completedTransactions.forEach(txn => {
+        if (txn.createdAt instanceof Timestamp) {
+          const date = txn.createdAt.toDate();
+          const year = date.getFullYear();
+          const qNum = Math.floor(date.getMonth() / 3) + 1;
+          const quarterKey = `${year}-Q${qNum}`;
+          if (quarterlyAgg.hasOwnProperty(quarterKey)) {
+            quarterlyAgg[quarterKey].sales += txn.amount;
+          }
+        }
+      });
+      setQuarterlySalesData(Object.keys(quarterlyAgg).sort().map(key => ({ name: quarterlyAgg[key].quarterLabel.split(' ')[0], sales: quarterlyAgg[key].sales })));
+
+      // --- Aggregate for Top Selling Products Chart ---
+      const paymentLinksQuery = query(collection(db, 'paymentLinks'), where('userId', '==', user.uid));
+      const paymentLinksSnapshot = await getDocs(paymentLinksQuery);
+      const paymentLinksMap = new Map<string, PaymentLink>();
+      paymentLinksSnapshot.forEach(doc => {
+        paymentLinksMap.set(doc.id, { id: doc.id, ...doc.data() } as PaymentLink);
+      });
+
+      const productSales: { [linkName: string]: number } = {};
+      completedTransactions.forEach(txn => {
+        const link = paymentLinksMap.get(txn.paymentLinkId);
+        if (link && link.linkName) {
+          productSales[link.linkName] = (productSales[link.linkName] || 0) + txn.amount;
+        }
+      });
+      const sortedProducts = Object.entries(productSales).sort(([, a], [, b]) => b - a).slice(0, 3);
+      let maxProductRevenue = sortedProducts.length > 0 ? sortedProducts[0][1] : 0;
+      setTopSellingProductsData(sortedProducts.map(([name, revenue]) => ({
+        name,
+        value: maxProductRevenue > 0 ? (revenue / maxProductRevenue) * 100 : 0,
+        displayValue: `KES ${revenue.toFixed(2)}`
+      })));
+
+    } catch (error) {
+      console.error("Error aggregating dashboard data:", error);
+      toast({ title: "Error", description: "Could not load dashboard analytics.", variant: "destructive" });
+    } finally {
+      setLoadingStatsAndCharts(false);
+    }
+  };
+  
+  useEffect(() => {
+    if (user && initialLoadComplete) {
+      fetchDataForStatsAndCharts();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, initialLoadComplete]);
+
 
   if (authLoading || !initialLoadComplete || (!user && initialLoadComplete)) {
     return (
@@ -126,8 +244,12 @@ const DashboardPage: NextPage = () => {
   const formatDateDisplay = (dateValue: Timestamp | Date | string | undefined | null) => {
     if (!dateValue) return 'N/A';
     const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue);
-    return format(date, 'yyyy-MM-dd'); // Consistent format
+    return format(date, 'yyyy-MM-dd');
   };
+  
+  const currentTopProductInfo = topSellingProductsData.length > 0 
+    ? { name: topSellingProductsData[0].name, change: "+5%" } // Dummy change
+    : { name: "N/A", change: "N/A" };
 
   return (
     <div className="space-y-8">
@@ -137,7 +259,13 @@ const DashboardPage: NextPage = () => {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {statData.map((stat) => (
+        {loadingStatsAndCharts ? (
+            [...Array(3)].map((_,i) => (
+                <Card key={i} className="bg-secondary shadow-sm rounded-xl"><CardHeader className="pb-2 p-6">
+                    <Skeleton className="h-5 w-3/4 mb-1" /><Skeleton className="h-8 w-1/2" />
+                </CardHeader><CardContent className="p-6 pt-0"><Skeleton className="h-5 w-1/4" /></CardContent></Card>
+            ))
+        ) : statData.map((stat) => (
           <Card key={stat.title} className="bg-secondary shadow-sm rounded-xl">
             <CardHeader className="pb-2 p-6">
                 <CardDescription className="text-base font-medium text-foreground">{stat.title}</CardDescription>
@@ -156,7 +284,7 @@ const DashboardPage: NextPage = () => {
       <Card className="bg-card shadow-sm rounded-xl border border-border">
         <CardHeader className="p-4 pt-5 pb-3"><CardTitle className="text-[22px] font-bold tracking-[-0.015em]">Recent Transactions</CardTitle></CardHeader>
         <CardContent className="px-4 py-3">
-          {loadingTransactions ? (
+          {loadingRecentTransactions ? (
              <div className="overflow-hidden rounded-xl border border-border">
                 <Table>
                   <TableHeader><TableRow className="bg-card hover:bg-card">{[...Array(4)].map((_,i) => <TableHead key={i} className="px-4 py-3"><Skeleton className="h-5 w-full"/></TableHead>)}</TableRow></TableHeader>
@@ -198,41 +326,43 @@ const DashboardPage: NextPage = () => {
           <Card className="bg-card shadow-sm rounded-xl border border-border">
             <CardHeader className="p-6">
                 <CardTitle className="text-base font-medium text-foreground">Monthly Revenue</CardTitle>
-                <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">KES 0.00</CardDescription>
+                {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{statData[0].value}</CardDescription>}
                 <div className="flex gap-1 pt-1">
                     <p className="text-base text-muted-foreground font-normal">Last 12 Months</p>
-                    <p className="text-base text-muted-foreground font-medium">N/A</p>
+                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : <p className={`text-base font-medium ${statData[0].positiveChange ? 'text-green-600' : 'text-muted-foreground'}`}>{statData[0].change}</p>}
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
-              {monthlyRevenueChartData.length > 0 ? (
+              {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
+               monthlyRevenueData.length > 0 ? (
                 <ChartContainer config={monthlyRevenueChartConfig} className="h-full w-full">
-                    <LineChart data={monthlyRevenueChartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                    <LineChart data={monthlyRevenueData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
                         <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => value.slice(0, 3)} />
+                        <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
                         <YAxis tickLine={false} axisLine={false} tickMargin={8} />
                         <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
                         <Line dataKey="revenue" type="monotone" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
                     </LineChart>
                 </ChartContainer>
               ) : (
-                <NoChartDataDisplay />
+                <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
               )}
             </CardContent>
           </Card>
           <Card className="bg-card shadow-sm rounded-xl border border-border">
             <CardHeader className="p-6">
                 <CardTitle className="text-base font-medium text-foreground">Quarterly Sales</CardTitle>
-                <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">KES 0.00</CardDescription>
+                {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{statData[0].value}</CardDescription> }
                 <div className="flex gap-1 pt-1">
                     <p className="text-base text-muted-foreground font-normal">Last 4 Quarters</p>
-                    <p className="text-base text-muted-foreground font-medium">N/A</p>
+                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : <p className={`text-base font-medium ${statData[0].positiveChange ? 'text-green-600' : 'text-muted-foreground'}`}>{statData[0].change}</p>}
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
-                {quarterlySalesChartData.length > 0 ? (
+                {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
+                 quarterlySalesData.length > 0 ? (
                     <ChartContainer config={quarterlySalesChartConfig} className="h-full w-full">
-                        <BarChart data={quarterlySalesChartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                        <BarChart data={quarterlySalesData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
                             <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
                             <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
                             <YAxis tickLine={false} axisLine={false} tickMargin={8} />
@@ -241,26 +371,28 @@ const DashboardPage: NextPage = () => {
                         </BarChart>
                     </ChartContainer>
                 ) : (
-                     <NoChartDataDisplay />
+                     <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
                 )}
             </CardContent>
           </Card>
           <Card className="bg-card shadow-sm rounded-xl border border-border">
              <CardHeader className="p-6">
                 <CardTitle className="text-base font-medium text-foreground">Top Selling Products</CardTitle>
-                <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">N/A</CardDescription>
+                {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{currentTopProductInfo.name}</CardDescription>}
                 <div className="flex gap-1 pt-1">
                     <p className="text-base text-muted-foreground font-normal">This Quarter</p>
-                    <p className="text-base text-muted-foreground font-medium">N/A</p>
+                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : <p className={`text-base font-medium ${currentTopProductInfo.name !== 'N/A' ? 'text-green-600' : 'text-muted-foreground'}`}>{currentTopProductInfo.change}</p>}
                 </div>
             </CardHeader>
             <CardContent className="p-6 pt-2 min-h-[210px]">
-                {topSellingProductsData.length > 0 ? (
+                {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> :
+                 topSellingProductsData.length > 0 ? (
                     <div className="space-y-6">
                         {topSellingProductsData.map((product) => (
                             <div key={product.name}>
                                 <div className="flex justify-between text-[13px] font-bold text-muted-foreground tracking-[0.015em] mb-1">
                                     <span>{product.name}</span>
+                                    {/* Optional: Display product.displayValue here if needed */}
                                 </div>
                                 <div className="h-2 w-full bg-muted rounded-full">
                                     <div className="h-2 bg-primary rounded-full" style={{ width: `${product.value}%` }} />
@@ -269,7 +401,7 @@ const DashboardPage: NextPage = () => {
                         ))}
                     </div>
                 ) : (
-                     <NoChartDataDisplay className="py-6"/>
+                     <NoChartDataDisplay className="py-6" onRefreshClick={fetchDataForStatsAndCharts} />
                 )}
             </CardContent>
           </Card>
@@ -280,3 +412,6 @@ const DashboardPage: NextPage = () => {
 };
 
 export default DashboardPage;
+
+
+    
