@@ -8,10 +8,9 @@ import { useAuth } from '@/contexts/auth-context';
 import { MainSidebar } from '@/components/dashboard/main-sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'; // Added SheetHeader, SheetTitle
 import { Menu } from 'lucide-react';
 import { AppLogo } from '@/components/shared/app-logo';
-// import { ThemeToggleButton } from '@/components/shared/theme-toggle-button'; // Removed
 
 export default function DashboardLayout({
   children,
@@ -32,7 +31,7 @@ export default function DashboardLayout({
     return (
       <div className="flex min-h-screen bg-background">
         {/* Desktop Sidebar Placeholder */}
-        <Skeleton className="hidden md:block w-64 h-screen fixed top-0 left-0" /> 
+        <Skeleton className="hidden md:block w-64 h-screen fixed top-0 left-0" />
         {/* Mobile Header Placeholder */}
         <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-background border-b z-20 flex items-center px-4 justify-between">
             <Skeleton className="h-8 w-8" />
@@ -78,21 +77,25 @@ export default function DashboardLayout({
             <div className="absolute left-1/2 transform -translate-x-1/2">
                 <AppLogo />
             </div>
-            {/* <ThemeToggleButton /> */} {/* Removed */}
             <div className="w-10 h-10"></div> {/* Placeholder for spacing if needed */}
           </header>
-           
+
           {/* Main Page Content */}
           <div className="p-6 md:p-8 flex-grow">
             {children}
           </div>
         </main>
       </div>
-      
+
       {/* Mobile Sidebar Sheet Content (Portal part) */}
       <SheetContent side="left" className="p-0 w-[270px] bg-sidebar border-r-0" showCloseButton={false}>
+        <SheetHeader className="sr-only"> {/* Visually hidden header for accessibility */}
+          <SheetTitle>Menu</SheetTitle>
+        </SheetHeader>
         <MainSidebar onLinkClick={() => setIsMobileSidebarOpen(false)} />
       </SheetContent>
     </Sheet>
   );
 }
+
+    
