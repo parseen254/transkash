@@ -1,122 +1,126 @@
+
 "use client";
 
 import type { NextPage } from 'next';
 import Link from 'next/link';
-import { PlusCircle, Edit, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Landmark, Phone, Edit2, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import type { PayoutAccount } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
 
-// Dummy data
-const payoutAccounts: PayoutAccount[] = [
-  { id: '1', accountName: 'Main Business Account', accountNumber: '**** **** **** 1234', bankName: 'Equity Bank Kenya', status: 'Active' },
-  { id: '2', accountName: 'Personal Savings', accountNumber: '**** **** **** 5678', bankName: 'KCB Bank', status: 'Active' },
-  { id: '3', accountName: 'Project Funds', accountNumber: '**** **** **** 9012', bankName: 'Co-operative Bank', status: 'Pending' },
+// Dummy data - updated with type and M-Pesa examples
+const dummyPayoutAccounts: PayoutAccount[] = [
+  { id: '1', type: 'bank', accountName: 'Main Business Account', accountNumber: '**** **** **** 1234', bankName: 'Bank of America', status: 'Active' },
+  { id: '2', type: 'bank', accountName: 'Project Funds', accountNumber: '**** **** **** 5678', bankName: 'Chase Bank', status: 'Active' },
+  { id: '3', type: 'mpesa', accountName: 'Sophia Bennett M-Pesa', accountNumber: '+254712345678', accountHolderName: 'Sophia Bennett', status: 'Active' },
+  { id: '4', type: 'bank', accountName: 'Secondary Business', accountNumber: '**** **** **** 9012', bankName: 'Equity Bank Kenya', status: 'Pending' },
+  { id: '5', type: 'mpesa', accountName: 'John Doe M-Pesa', accountNumber: '+254700000000', accountHolderName: 'John Doe', status: 'Disabled' },
 ];
 
-const PayoutAccountsPage: NextPage = () => {
-  const handleDelete = (id: string) => {
-    alert(`Deleting account ${id}`);
-    // Implement actual delete logic
-  };
+const PayoutAccountItem: React.FC<{ account: PayoutAccount; onEdit: (id: string) => void }> = ({ account, onEdit }) => {
+  const Icon = account.type === 'bank' ? Landmark : Phone;
+  const primaryIdentifier = account.type === 'bank' ? `...${account.accountNumber.slice(-4)}` : account.accountNumber;
+  const secondaryIdentifier = account.type === 'bank' ? account.bankName : account.accountHolderName;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Payout Accounts</h1>
-          <p className="text-muted-foreground">Manage your bank accounts for receiving payouts.</p>
+    <div className="flex items-center justify-between py-4 border-b border-border last:border-b-0">
+      <div className="flex items-center gap-4">
+        <div className="bg-secondary p-3 rounded-lg">
+          <Icon className="h-5 w-5 text-muted-foreground" />
         </div>
-        <div className="space-x-2">
-          <Link href="/dashboard/payouts/add-minimal" legacyBehavior>
-            <Button>
-              <PlusCircle className="mr-2 h-4 w-4" /> Add Minimal Account
-            </Button>
-          </Link>
-          <Link href="/dashboard/payouts/add-detailed" legacyBehavior>
-            <Button variant="outline">
-              <PlusCircle className="mr-2 h-4 w-4" /> Add Detailed Account
-            </Button>
-          </Link>
+        <div>
+          <p className="font-medium text-foreground">{primaryIdentifier}</p>
+          <p className="text-sm text-muted-foreground">{secondaryIdentifier}</p>
         </div>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Your Payout Accounts</CardTitle>
-          <CardDescription>List of all configured payout accounts.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Account Name</TableHead>
-                <TableHead>Account Number</TableHead>
-                <TableHead>Bank</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {payoutAccounts.map((account) => (
-                <TableRow key={account.id}>
-                  <TableCell className="font-medium">{account.accountName}</TableCell>
-                  <TableCell>{account.accountNumber}</TableCell>
-                  <TableCell>{account.bankName}</TableCell>
-                  <TableCell>
-                    <Badge variant={account.status === 'Active' ? 'default' : account.status === 'Pending' ? 'secondary' : 'destructive'}>
-                      {account.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                          <span className="sr-only">Open menu</span>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => router.push(`/dashboard/payouts/edit/${account.id}`)}> {/* Assume an edit page */}
-                          <Edit className="mr-2 h-4 w-4" /> Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDelete(account.id)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                          <Trash2 className="mr-2 h-4 w-4" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {payoutAccounts.length === 0 && (
-            <div className="text-center py-10 text-muted-foreground">
-              No payout accounts found. Add your first account to get started.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <Button variant="ghost" size="icon" onClick={() => onEdit(account.id)} aria-label="Edit account">
+        <Edit2 className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+      </Button>
     </div>
   );
 };
-// Add router import for edit functionality if needed
-import { useRouter } from 'next/navigation'; // Placeholder, already present in other files
+
+const PayoutAccountsPage: NextPage = () => {
+  const router = useRouter();
+
+  const bankAccounts = dummyPayoutAccounts.filter(acc => acc.type === 'bank');
+  const mpesaAccounts = dummyPayoutAccounts.filter(acc => acc.type === 'mpesa');
+
+  const handleEdit = (id: string) => {
+    // For now, navigate to a generic edit page or log.
+    // Replace with actual navigation to an edit page: router.push(`/dashboard/payouts/edit/${id}`);
+    console.log(`Edit account ${id}`);
+    // Example navigation, assuming an edit page exists:
+    // router.push(`/dashboard/payouts/edit/${id}`); // You'll need to create this page
+    alert(`Simulating edit for account ID: ${id}. You need to create /dashboard/payouts/edit/[id]/page.tsx`);
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Payout accounts</h1>
+      </div>
+
+      {/* Bank Accounts Section */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-foreground">Bank accounts</h2>
+        </div>
+        <Card>
+          <CardContent className="p-0">
+            {bankAccounts.length > 0 ? (
+              <div className="divide-y divide-border">
+                {bankAccounts.map((account) => (
+                  <div key={account.id} className="px-6">
+                    <PayoutAccountItem account={account} onEdit={handleEdit} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="p-6 text-muted-foreground">No bank accounts added yet.</p>
+            )}
+          </CardContent>
+        </Card>
+        <div className="mt-4">
+          <Link href="/dashboard/payouts/add-bank" legacyBehavior>
+            <Button variant="outline">
+              <PlusCircle className="mr-2 h-4 w-4" /> Add bank account
+            </Button>
+          </Link>
+        </div>
+      </section>
+
+      {/* M-Pesa Accounts Section */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-foreground">M-Pesa accounts</h2>
+        </div>
+        <Card>
+          <CardContent className="p-0">
+            {mpesaAccounts.length > 0 ? (
+               <div className="divide-y divide-border">
+                {mpesaAccounts.map((account) => (
+                   <div key={account.id} className="px-6">
+                    <PayoutAccountItem account={account} onEdit={handleEdit} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="p-6 text-muted-foreground">No M-Pesa accounts added yet.</p>
+            )}
+          </CardContent>
+        </Card>
+        <div className="mt-4">
+          <Link href="/dashboard/payouts/add-mpesa" legacyBehavior>
+            <Button variant="outline">
+              <PlusCircle className="mr-2 h-4 w-4" /> Add M-Pesa account
+            </Button>
+          </Link>
+        </div>
+      </section>
+    </div>
+  );
+};
 
 export default PayoutAccountsPage;

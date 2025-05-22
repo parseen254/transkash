@@ -29,9 +29,11 @@ export interface UserProfile {
 export interface PayoutAccount {
   id: string; // Firestore document ID
   userId?: string; // Belongs to which user
-  accountName: string;
-  accountNumber: string; // Should be stored securely, consider masking for display
-  bankName: string;
+  type: 'bank' | 'mpesa'; // Type of payout account
+  accountName: string; // User-defined name for the account (e.g., "My Main KCB")
+  accountNumber: string; // Actual account number or M-Pesa phone number
+  accountHolderName?: string; // Required for M-Pesa, optional for bank
+  bankName?: string; // Required for bank accounts
   bankBranch?: string;
   bankCode?: string;
   bankSwiftCode?: string;
