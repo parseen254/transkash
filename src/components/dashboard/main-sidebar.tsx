@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Link as LinkIcon, Settings, Landmark, LogOut, Users } from 'lucide-react'; // Added Home and Users
+import { Home, Link as LinkIcon, Settings, Landmark, LogOut, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -21,7 +21,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: '/dashboard/home', label: 'Home', icon: Home },
+  { href: '/dashboard', label: 'Home', icon: Home }, // Updated href
   { href: '/dashboard/payment-links', label: 'Payment Links', icon: LinkIcon },
   { href: '/dashboard/payouts', label: 'Payout Accounts', icon: Landmark },
   // { href: '/dashboard/customers', label: 'Customers', icon: Users }, // Example, can be added later
@@ -102,24 +102,27 @@ export function MainSidebar() {
       </div>
 
       <nav className="flex-grow p-4 space-y-2">
-        {navItems.map((item) => (
-          <Link href={item.href} key={item.label} legacyBehavior>
-            <a
-              className={cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                // Check for exact match for home, startsWith for others to handle sub-routes
-                item.href === '/dashboard/home' ? 
-                  (pathname === item.href || pathname === '/dashboard' ? 'bg-sidebar-primary text-sidebar-primary-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')
-                : (pathname.startsWith(item.href)
-                  ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')
-              )}
-            >
-              <item.icon className="h-5 w-5" />
-              {item.label}
-            </a>
-          </Link>
-        ))}
+        {navItems.map((item) => {
+          const isActive = item.href === '/dashboard'
+            ? pathname === '/dashboard' // Exact match for the root dashboard page
+            : pathname.startsWith(item.href); // StartsWith for all other nested dashboard pages
+
+          return (
+            <Link href={item.href} key={item.label} legacyBehavior>
+              <a
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                )}
+              >
+                <item.icon className="h-5 w-5" />
+                {item.label}
+              </a>
+            </Link>
+          );
+        })}
       </nav>
 
       <Separator className="bg-sidebar-border" />

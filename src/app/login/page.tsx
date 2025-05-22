@@ -12,12 +12,12 @@ import { auth, googleAuthProvider, db } from '@/lib/firebase';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form'; // Removed FormLabel as per design
+import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { HelpCircle } from 'lucide-react'; // Added HelpCircle
+import { HelpCircle } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
-import { AppLogo } from '@/components/shared/app-logo'; // Added AppLogo
-import { Skeleton } from '@/components/ui/skeleton'; // For loading state
+import { AppLogo } from '@/components/shared/app-logo';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
@@ -85,7 +85,7 @@ const LoginPage: NextPage = () => {
             title: "Login Successful",
             description: "Redirecting to dashboard...",
           });
-          router.push('/dashboard');
+          router.push('/dashboard'); // Updated redirect
         }
       } catch (error: any) {
         console.error('Google Sign-In redirect error:', error);
@@ -133,7 +133,7 @@ const LoginPage: NextPage = () => {
         title: "Login Successful",
         description: "Redirecting to dashboard...",
       });
-      router.push('/dashboard');
+      router.push('/dashboard'); // Updated redirect
     } catch (error: any) {
       console.error('Login error:', error);
       const errorMessage = error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password'
@@ -153,10 +153,6 @@ const LoginPage: NextPage = () => {
     setIsSubmittingManual(true); 
     try {
       await signInWithRedirect(auth, googleAuthProvider);
-      // toast({ // Toast might not be visible if page redirects immediately
-      //   title: "Redirecting to Google...",
-      //   description: "Please complete the sign-in with Google."
-      // });
     } catch (error: any) {
         console.error('Google Sign-In initiation error:', error);
         toast({
@@ -207,7 +203,6 @@ const LoginPage: NextPage = () => {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    {/* No FormLabel as per design */}
                     <FormControl>
                       <Input 
                         type="email" 
@@ -225,7 +220,6 @@ const LoginPage: NextPage = () => {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    {/* No FormLabel as per design */}
                     <FormControl>
                       <Input 
                         type="password" 
