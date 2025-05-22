@@ -2,10 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, CreditCard, Link as LinkIcon, Settings, Landmark, LogOut, UserCircle } from 'lucide-react';
+import { Link as LinkIcon, Settings, Landmark, LogOut, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { AppLogo } from '@/components/shared/app-logo';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
@@ -30,8 +29,8 @@ export function MainSidebar() {
       <div className="p-4 border-b border-sidebar-border">
         <Link href="/dashboard" legacyBehavior>
           <a className="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-sidebar-primary"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" /></svg>
-            <h1 className="text-xl font-bold text-sidebar-primary-foreground">SwitchLink</h1>
+            <X className="h-8 w-8 text-sidebar-primary" />
+            <h1 className="text-xl font-bold text-sidebar-primary">pesi X</h1>
           </a>
         </Link>
       </div>

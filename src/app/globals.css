@@ -2,104 +2,101 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-
 @layer base {
   :root {
-    --background: 188 75% 92.5%; /* #E0F7FA Light Cyan */
-    --foreground: 210 20% 20%; /* Dark Gray for text */
+    --background: 0 0% 100%; /* White */
+    --foreground: 224 71% 4%; /* Almost Black (e.g., #050A1D) */
 
     --card: 0 0% 100%; /* White */
-    --card-foreground: 210 20% 20%;
+    --card-foreground: 224 71% 4%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 210 20% 20%;
+    --popover-foreground: 224 71% 4%;
 
-    --primary: 188 100% 41.6%; /* #00B8D4 Vibrant Cyan */
+    --primary: 221 83% 53%; /* Blue (e.g., #2563EB) */
     --primary-foreground: 0 0% 100%; /* White */
 
-    --secondary: 188 60% 80%; /* #B2EBF2 Lighter Cyan */
-    --secondary-foreground: 188 100% 30%; /* Darker Cyan for text on secondary */
+    --secondary: 220 14.3% 95.9%; /* Light Gray (e.g., Tailwind gray-100 #F3F4F6) */
+    --secondary-foreground: 222.9 39.3% 26.9%; /* Dark Gray for text on secondary (e.g., Tailwind gray-700 #374151) */
 
-    --muted: 188 50% 90%; /* #D4F3F7 Very Light Cyan */
-    --muted-foreground: 188 40% 50%; /* Muted Cyan text */
+    --muted: 220 14.3% 95.9%; /* Very Light Gray (e.g., Tailwind gray-100 #F3F4F6) */
+    --muted-foreground: 220 8.9% 43.1%; /* Muted Gray text (e.g., Tailwind gray-500 #6B7280) */
 
-    --accent: 197 100% 34.5%; /* #0083B0 Analogous Blue */
+    --accent: 221 83% 53%; /* Same as primary blue */
     --accent-foreground: 0 0% 100%; /* White */
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive: 0 72.2% 50.6%; /* Red (e.g., Tailwind red-600 #DC2626) */
+    --destructive-foreground: 0 0% 98%; /* Light text for destructive (e.g., Tailwind stone-50 #FAFAF9) */
 
-    --border: 188 50% 75%; /* Cyan border */
+    --border: 220 13.1% 89.6%; /* Light Gray border (e.g., Tailwind gray-200 #E5E7EB) */
     --input: 0 0% 100%; /* Input background is white */
-    --input-border: 188 50% 70%; /* Slightly darker border for inputs */
-    --ring: 188 100% 41.6%; /* Primary color for focus rings */
+    --input-border: 214.3 31.8% 91.4%; /* Gray border for inputs (e.g., Tailwind gray-300 #D1D5DB) */
+    --ring: 221 83% 53%; /* Primary color for focus rings */
 
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
+    --radius: 0.375rem; /* Adjusted radius for a sharper look */
 
-    /* Sidebar specific theme */
-    --sidebar-background: 200 10% 18%; /* Dark Slate Blue/Gray #252A2E */
-    --sidebar-foreground: 188 75% 85%; /* Light Cyan text #C5F1F8 */
-    --sidebar-primary: 188 100% 41.6%; /* Vibrant Cyan for active items #00B8D4 */
-    --sidebar-primary-foreground: 0 0% 100%; /* White */
-    --sidebar-accent: 200 10% 25%; /* Hover BG #363C42 */
-    --sidebar-accent-foreground: 188 100% 60%; /* Hover text #4DD0E1 */
-    --sidebar-border: 200 10% 30%; /* Border inside sidebar #424950 */
-    --sidebar-ring: 188 100% 41.6%; /* Ring for focusable items */
+    /* Sidebar specific theme (Dark) */
+    --sidebar-background: 224 71% 4%; /* Very Dark Blue/Black (e.g., #050A1D or Tailwind slate-950) */
+    --sidebar-foreground: 215 27.9% 83.9%; /* Light Gray text (e.g., Tailwind slate-200 #E2E8F0) */
+    --sidebar-primary: 221 83% 53%; /* Primary blue for active items */
+    --sidebar-primary-foreground: 0 0% 100%; /* White text on primary */
+    --sidebar-accent: 220 26% 13%; /* Hover BG - Slightly lighter dark (e.g. #1C2430) */
+    --sidebar-accent-foreground: 0 0% 100%; /* Hover text White */
+    --sidebar-border: 215 28% 17%; /* Border inside sidebar (e.g., Tailwind slate-800 #1E293B) */
+    --sidebar-ring: 221 83% 53%; /* Ring for focusable items */
   }
 
   .dark {
-    --background: 200 10% 18%; /* Dark Slate Blue/Gray */
-    --foreground: 188 75% 85%; /* Light Cyan text */
+    --background: 224 71% 4%; /* Very Dark Blue/Black (e.g., #050A1D or Tailwind slate-950) */
+    --foreground: 215 27.9% 83.9%; /* Light Gray text (e.g., Tailwind slate-200 #E2E8F0) */
 
-    --card: 200 10% 22%; /* Slightly lighter dark */
-    --card-foreground: 188 75% 85%;
+    --card: 222.4 63.5% 7.3%; /* Darker Gray (e.g., Tailwind slate-900 #0F172A) */
+    --card-foreground: 215 27.9% 83.9%;
 
-    --popover: 200 10% 15%;
-    --popover-foreground: 188 75% 85%;
+    --popover: 224 71% 4%;
+    --popover-foreground: 215 27.9% 83.9%;
 
-    --primary: 188 100% 50%; /* Slightly brighter cyan for dark mode */
-    --primary-foreground: 200 10% 10%; /* Darker text on primary */
+    --primary: 221 83% 60%; /* Slightly brighter blue for dark mode (e.g., #3B82F6) */
+    --primary-foreground: 210 20% 98%; /* Near white text on primary */
 
-    --secondary: 200 10% 30%;
-    --secondary-foreground: 188 75% 85%;
+    --secondary: 215 28.3% 17.1%; /* Dark gray (e.g., Tailwind slate-800 #1E293B) */
+    --secondary-foreground: 217.2 32.6% 80%; /* Lighter gray text (e.g., Tailwind slate-300 #CBD5E1) */
 
-    --muted: 200 10% 25%;
-    --muted-foreground: 188 50% 70%;
+    --muted: 215 28.3% 17.1%;
+    --muted-foreground: 215 20.2% 65.1%; /* Muted light gray text (e.g., Tailwind slate-400 #94A3B8) */
 
-    --accent: 197 100% 45%; /* Brighter blue for dark mode */
-    --accent-foreground: 0 0% 100%;
+    --accent: 221 83% 60%;
+    --accent-foreground: 210 20% 98%;
 
-    --destructive: 0 70% 50%;
+    --destructive: 0 62.8% 50.4%; /* Red (e.g., Tailwind red-500 #EF4444) */
     --destructive-foreground: 0 0% 98%;
 
-    --border: 200 10% 30%;
-    --input: 200 10% 22%;
-    --input-border: 200 10% 35%;
-    --ring: 188 100% 50%;
+    --border: 215.4 19.5% 29.8%; /* Dark gray border (e.g., Tailwind slate-700 #334155) */
+    --input: 215.4 19.5% 29.8%; /* Dark input background */
+    --input-border: 216 15.8% 38.6%; /* Darker input border (e.g., Tailwind slate-600 #475569) */
+    --ring: 221 83% 60%;
 
-    --chart-1: 188 80% 60%;
-    --chart-2: 197 70% 50%;
-    --chart-3: 12 70% 55%;
-    --chart-4: 43 70% 60%;
-    --chart-5: 27 80% 65%;
+    --chart-1: 221 83% 65%;
+    --chart-2: 173 60% 55%;
+    --chart-3: 197 40% 40%;
+    --chart-4: 43 70% 70%;
+    --chart-5: 27 80% 70%;
 
     /* Dark Sidebar specific theme (can be same as main dark theme or different) */
-    --sidebar-background: 200 10% 12%; /* Even darker for sidebar */
-    --sidebar-foreground: 188 75% 90%;
-    --sidebar-primary: 188 100% 50%;
-    --sidebar-primary-foreground: 200 10% 10%;
-    --sidebar-accent: 200 10% 20%;
-    --sidebar-accent-foreground: 188 100% 65%;
-    --sidebar-border: 200 10% 25%;
-    --sidebar-ring: 188 100% 50%;
+    /* For consistency, keeping it same as the main dark sidebar theme defined above */
+    --sidebar-background: 224 71% 4%;
+    --sidebar-foreground: 215 27.9% 83.9%;
+    --sidebar-primary: 221 83% 60%;
+    --sidebar-primary-foreground: 210 20% 98%;
+    --sidebar-accent: 220 26% 13%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 215 28% 17%;
+    --sidebar-ring: 221 83% 60%;
   }
 }
 
@@ -110,7 +107,7 @@ body {
   body {
     @apply bg-background text-foreground;
   }
-  /* Ensure inputs have distinct background */
+  /* Ensure inputs have distinct background and border */
   input[type="text"],
   input[type="email"],
   input[type="password"],

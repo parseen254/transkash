@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'SwitchLink Payments',
-  description: 'Seamless payments to and from Kenya.',
+  title: 'pesi X',
+  description: 'Seamless payments with pesi X.',
 };
 
 export default function RootLayout({
