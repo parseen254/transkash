@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, LinkIcon as LinkIconLucide, Settings, Landmark, LogOut, Users } from 'lucide-react'; // Renamed LinkIcon to LinkIconLucide
+import { Home, LinkIcon as LinkIconLucide, Settings, Landmark, LogOut, Users, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -13,6 +13,8 @@ import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { AppLogo } from '@/components/shared/app-logo';
+import { ThemeToggleButton } from '@/components/shared/theme-toggle-button';
+
 
 interface NavItem {
   href: string;
@@ -26,6 +28,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/payouts', label: 'Payout Accounts', icon: Landmark },
   { href: '/dashboard/customers', label: 'Customers', icon: Users },
   { href: '/dashboard/settings', label: 'Profile Settings', icon: Settings },
+  // { href: '/dashboard/security', label: 'Security', icon: ShieldCheck }, // Security page was removed
 ];
 
 interface MainSidebarProps {
@@ -82,33 +85,36 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
         </Link>
       </div>
       
-      <div className="p-4 flex items-center gap-3 border-b border-sidebar-border shrink-0">
-        <Avatar className="h-10 w-10">
-          {user?.photoURL ? (
-            <AvatarImage src={user.photoURL} alt={user.displayName || 'User'} />
-          ) : (
-             <AvatarImage src="https://placehold.co/100x100.png" alt={user?.displayName || "User"} data-ai-hint="user avatar" />
-          )}
-          <AvatarFallback>{user ? getInitials(user.displayName) : 'U'}</AvatarFallback>
-        </Avatar>
-        <div>
-          {loading ? (
-            <>
-              <div className="text-sm font-semibold text-sidebar-primary-foreground animate-pulse bg-sidebar-accent rounded w-24 h-4"></div>
-              <div className="text-xs text-sidebar-foreground/80 animate-pulse bg-sidebar-accent rounded w-32 h-3 mt-1"></div>
-            </>
-          ) : user ? (
-            <>
-              <p className="text-sm font-semibold text-sidebar-primary-foreground truncate" title={user.displayName || "User Name"}>{user.displayName || 'User Name'}</p>
-              <p className="text-xs text-sidebar-foreground/80 truncate" title={user.email || ""}>{user.email}</p>
-            </>
-          ) : (
-             <>
-              <p className="text-sm font-semibold text-sidebar-primary-foreground">Guest User</p>
-              <p className="text-xs text-sidebar-foreground/80">Not logged in</p>
-            </>
-          )}
+      <div className="p-4 flex items-center justify-between gap-3 border-b border-sidebar-border shrink-0">
+        <div className="flex items-center gap-3 overflow-hidden"> {/* Added overflow-hidden for truncation */}
+            <Avatar className="h-10 w-10">
+            {user?.photoURL ? (
+                <AvatarImage src={user.photoURL} alt={user.displayName || 'User'} />
+            ) : (
+                <AvatarImage src="https://placehold.co/100x100.png" alt={user?.displayName || "User"} data-ai-hint="user avatar" />
+            )}
+            <AvatarFallback>{user ? getInitials(user.displayName) : 'U'}</AvatarFallback>
+            </Avatar>
+            <div className="overflow-hidden"> {/* Added overflow-hidden for truncation */}
+            {loading ? (
+                <>
+                <div className="text-sm font-semibold text-sidebar-foreground animate-pulse bg-sidebar-accent rounded w-24 h-4"></div>
+                <div className="text-xs text-sidebar-foreground/80 animate-pulse bg-sidebar-accent rounded w-32 h-3 mt-1"></div>
+                </>
+            ) : user ? (
+                <>
+                <p className="text-sm font-semibold text-sidebar-foreground truncate" title={user.displayName || "User Name"}>{user.displayName || 'User Name'}</p>
+                <p className="text-xs text-sidebar-foreground/80 truncate" title={user.email || ""}>{user.email}</p>
+                </>
+            ) : (
+                <>
+                <p className="text-sm font-semibold text-sidebar-foreground">Guest User</p>
+                <p className="text-xs text-sidebar-foreground/80">Not logged in</p>
+                </>
+            )}
+            </div>
         </div>
+        <ThemeToggleButton />
       </div>
 
       <nav className="flex-grow p-4 space-y-1 overflow-y-auto">
@@ -122,11 +128,11 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
                 className={cn(
                   'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-secondary text-secondary-foreground' // Active state from design
+                    ? 'bg-secondary text-secondary-foreground' 
                     : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                 )}
               >
-                <item.icon className={cn("h-5 w-5", isActive ? "text-secondary-foreground" : "text-sidebar-foreground")} />
+                <item.icon className={cn("h-5 w-5", isActive ? "text-secondary-foreground" : "text-sidebar-foreground/90 group-hover:text-sidebar-accent-foreground")} />
                 {item.label}
               </a>
             </Link>

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
 import { AppLogo } from '@/components/shared/app-logo';
+import { ThemeToggleButton } from '@/components/shared/theme-toggle-button';
 
 export default function DashboardLayout({
   children,
@@ -33,11 +34,9 @@ export default function DashboardLayout({
         {/* Desktop Sidebar Placeholder */}
         <Skeleton className="hidden md:block w-64 h-screen fixed top-0 left-0" /> 
         {/* Mobile Header Placeholder */}
-        <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-background border-b z-20 flex items-center px-4">
+        <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-background border-b z-20 flex items-center px-4 justify-between">
             <Skeleton className="h-8 w-8" />
-            <div className="flex-grow flex justify-center">
-                 <Skeleton className="h-7 w-20" />
-            </div>
+            <Skeleton className="h-7 w-20" />
             <Skeleton className="h-8 w-8" />
         </div>
         <main className="flex-1 p-6 md:p-8 md:ml-64 mt-16 md:mt-0">
@@ -79,8 +78,7 @@ export default function DashboardLayout({
             <div className="absolute left-1/2 transform -translate-x-1/2">
                 <AppLogo />
             </div>
-            {/* Placeholder for potential right-side icons on mobile header */}
-            <div className="w-8 h-8"></div> 
+            <ThemeToggleButton /> 
           </header>
            
           {/* Main Page Content */}

@@ -40,14 +40,14 @@
     --chart-5: 27 87% 67%;
     --radius: 0.375rem; /* Adjusted radius for a sharper look */
 
-    /* Sidebar specific theme (Dark) */
-    --sidebar-background: 224 71% 4%; /* Very Dark Blue/Black (e.g., #050A1D or Tailwind slate-950) */
-    --sidebar-foreground: 215 27.9% 83.9%; /* Light Gray text (e.g., Tailwind slate-200 #E2E8F0) */
+    /* Sidebar specific theme (Light Mode) */
+    --sidebar-background: 0 0% 100%; /* White, like card */
+    --sidebar-foreground: 224 71% 4%; /* Dark text, like card-foreground */
     --sidebar-primary: 221 83% 53%; /* Primary blue for active items */
     --sidebar-primary-foreground: 0 0% 100%; /* White text on primary */
-    --sidebar-accent: 220 26% 13%; /* Hover BG - Slightly lighter dark (e.g. #1C2430) */
-    --sidebar-accent-foreground: 0 0% 100%; /* Hover text White */
-    --sidebar-border: 215 28% 17%; /* Border inside sidebar (e.g., Tailwind slate-800 #1E293B) */
+    --sidebar-accent: 220 14.3% 95.9%; /* Light Gray hover BG, like secondary */
+    --sidebar-accent-foreground: 222.9 39.3% 26.9%; /* Dark Gray text on hover, like secondary-foreground */
+    --sidebar-border: 220 13.1% 89.6%; /* Light Gray border, like border */
     --sidebar-ring: 221 83% 53%; /* Ring for focusable items */
   }
 
@@ -87,16 +87,15 @@
     --chart-4: 43 70% 70%;
     --chart-5: 27 80% 70%;
 
-    /* Dark Sidebar specific theme (can be same as main dark theme or different) */
-    /* For consistency, keeping it same as the main dark sidebar theme defined above */
-    --sidebar-background: 224 71% 4%;
-    --sidebar-foreground: 215 27.9% 83.9%;
-    --sidebar-primary: 221 83% 60%;
-    --sidebar-primary-foreground: 210 20% 98%;
-    --sidebar-accent: 220 26% 13%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 215 28% 17%;
-    --sidebar-ring: 221 83% 60%;
+    /* Dark Sidebar specific theme */
+    --sidebar-background: 224 71% 4%; /* Very Dark Blue/Black */
+    --sidebar-foreground: 215 27.9% 83.9%; /* Light Gray text */
+    --sidebar-primary: 221 83% 60%; /* Primary blue for active items */
+    --sidebar-primary-foreground: 210 20% 98%; /* White text on primary */
+    --sidebar-accent: 220 26% 13%; /* Hover BG - Slightly lighter dark */
+    --sidebar-accent-foreground: 0 0% 100%; /* Hover text White */
+    --sidebar-border: 215 28% 17%; /* Border inside sidebar */
+    --sidebar-ring: 221 83% 60%; /* Ring for focusable items */
   }
 }
 
