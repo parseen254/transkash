@@ -17,14 +17,14 @@ import { useToast } from '@/hooks/use-toast';
 
 const bankAccountSchema = z.object({
   accountName: z.string().min(1, { message: 'Account nickname is required.' }),
-  accountType: z.string().default("Bank Account"), // To match design, could be pre-filled and read-only
   accountHolderName: z.string().min(1, { message: 'Account holder name is required.' }),
   accountNumber: z.string().min(1, { message: 'Account number is required.' }).regex(/^\d+$/, "Account number must be numeric."),
   bankName: z.string().min(1, { message: 'Bank name is required.' }),
-  routingNumber: z.string().optional(),
-  swiftCode: z.string().optional().refine(val => !val || (val.length >= 8 && val.length <= 11), {
-    message: "SWIFT code must be 8 to 11 characters long if provided.",
-  }),
+  routingNumber: z.string().min(1, { message: 'Routing number is required.' }),
+  swiftCode: z.string()
+    .min(8, { message: "SWIFT/BIC code must be between 8 and 11 characters." })
+    .max(11, { message: "SWIFT/BIC code must be between 8 and 11 characters." })
+    .regex(/^[A-Z0-9]{8,11}$/, { message: "Invalid SWIFT/BIC code format." }), // Typical SWIFT/BIC format
 });
 
 type BankAccountFormValues = z.infer<typeof bankAccountSchema>;
@@ -38,7 +38,6 @@ const AddBankAccountPage: NextPage = () => {
     resolver: zodResolver(bankAccountSchema),
     defaultValues: {
       accountName: '',
-      accountType: 'Bank Account', // Pre-fill based on design
       accountHolderName: '',
       accountNumber: '',
       bankName: '',
@@ -87,19 +86,6 @@ const AddBankAccountPage: NextPage = () => {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="accountType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Account Type</FormLabel>
-                    <FormControl>
-                      <Input {...field} readOnly className="bg-muted cursor-not-allowed" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
                <FormField
                 control={form.control}
                 name="accountHolderName"
@@ -144,7 +130,7 @@ const AddBankAccountPage: NextPage = () => {
                 name="routingNumber"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Routing Number (Optional)</FormLabel>
+                    <FormLabel>Routing Number</FormLabel>
                     <FormControl>
                       <Input placeholder="Enter routing number" {...field} />
                     </FormControl>
@@ -157,11 +143,11 @@ const AddBankAccountPage: NextPage = () => {
                 name="swiftCode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>SWIFT Code (Optional)</FormLabel>
+                    <FormLabel>SWIFT/BIC Code</FormLabel>
                     <FormControl>
                       <Input placeholder="Enter SWIFT/BIC code" {...field} />
                     </FormControl>
-                    <FormDesc>Required for international transfers. Typically 8 or 11 characters.</FormDesc>
+                    <FormDesc>Required for international transfers. Must be 8 or 11 characters.</FormDesc>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -180,4 +166,3 @@ const AddBankAccountPage: NextPage = () => {
 };
 
 export default AddBankAccountPage;
-
