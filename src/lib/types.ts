@@ -30,13 +30,14 @@ export interface PayoutAccount {
   id: string; // Firestore document ID
   userId?: string; // Belongs to which user
   type: 'bank' | 'mpesa'; // Type of payout account
-  accountName: string; // User-defined name for the account (e.g., "My Main KCB")
+  accountName: string; // User-defined name for the account (e.g., "My Main KCB") - Nickname
   accountNumber: string; // Actual account number or M-Pesa phone number
-  accountHolderName?: string; // Required for M-Pesa, optional for bank
+  accountHolderName?: string; // Required for M-Pesa, formal name for bank
   bankName?: string; // Required for bank accounts
-  bankBranch?: string;
-  bankCode?: string;
-  bankSwiftCode?: string;
+  bankBranch?: string; // Kept for potential future use, even if not on current form
+  bankCode?: string; // Kept for potential future use
+  swiftCode?: string; // For international bank transfers
+  routingNumber?: string; // For specific banking systems (e.g., US ABA)
   status: 'Active' | 'Pending' | 'Disabled';
   createdAt?: Timestamp | Date;
   updatedAt?: Timestamp | Date;
@@ -82,3 +83,4 @@ export interface Transaction {
   reference: string; // Transaction reference
   paymentLinkId?: string; // ID of the payment link this transaction is for
 }
+

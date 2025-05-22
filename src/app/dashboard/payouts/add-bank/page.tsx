@@ -12,34 +12,22 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormDescription as FormDesc, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const bankAccountSchema = z.object({
-  accountName: z.string().min(1, { message: 'Account name is required.' }),
+  accountName: z.string().min(1, { message: 'Account nickname is required.' }),
+  accountType: z.string().default("Bank Account"), // To match design, could be pre-filled and read-only
+  accountHolderName: z.string().min(1, { message: 'Account holder name is required.' }),
   accountNumber: z.string().min(1, { message: 'Account number is required.' }).regex(/^\d+$/, "Account number must be numeric."),
   bankName: z.string().min(1, { message: 'Bank name is required.' }),
-  bankBranch: z.string().optional(),
-  // bankCode: z.string().optional(), // Removed as per simpler design
-  // bankSwiftCode: z.string().optional(), // Removed as per simpler design
+  routingNumber: z.string().optional(),
+  swiftCode: z.string().optional().refine(val => !val || (val.length >= 8 && val.length <= 11), {
+    message: "SWIFT code must be 8 to 11 characters long if provided.",
+  }),
 });
 
 type BankAccountFormValues = z.infer<typeof bankAccountSchema>;
-
-// Dummy data for bank names - in a real app, this might come from an API or be more extensive
-const KCB_BANK = { id: 'kcb', name: 'KCB Bank Kenya' };
-const EQUITY_BANK = { id: 'equity', name: 'Equity Bank Kenya' };
-const COOP_BANK = { id: 'coop', name: 'Co-operative Bank of Kenya' };
-const STANBIC_BANK = { id: 'stanbic', name: 'Stanbic Bank Kenya' };
-const STANCHART_BANK = { id: 'stanchart', name: 'Standard Chartered Bank Kenya' };
-const ABSA_BANK = { id: 'absa', name: 'Absa Bank Kenya' };
-const DTB_BANK = { id: 'dtb', name: 'Diamond Trust Bank Kenya' };
-const NCBA_BANK = { id: 'ncba', name: 'NCBA Bank Kenya' };
-
-const popularBanks = [
-    KCB_BANK, EQUITY_BANK, COOP_BANK, STANBIC_BANK, STANCHART_BANK, ABSA_BANK, DTB_BANK, NCBA_BANK
-];
 
 
 const AddBankAccountPage: NextPage = () => {
@@ -50,9 +38,12 @@ const AddBankAccountPage: NextPage = () => {
     resolver: zodResolver(bankAccountSchema),
     defaultValues: {
       accountName: '',
+      accountType: 'Bank Account', // Pre-fill based on design
+      accountHolderName: '',
       accountNumber: '',
       bankName: '',
-      bankBranch: '',
+      routingNumber: '',
+      swiftCode: '',
     },
   });
 
@@ -76,7 +67,7 @@ const AddBankAccountPage: NextPage = () => {
       </Link>
       <Card className="max-w-2xl mx-auto">
         <CardHeader>
-          <CardTitle>Add Bank Account</CardTitle>
+          <CardTitle>Add payout account</CardTitle>
           <CardDescription>Provide details for your new bank payout account.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -91,6 +82,33 @@ const AddBankAccountPage: NextPage = () => {
                     <FormControl>
                       <Input placeholder="e.g., My Business Checking" {...field} />
                     </FormControl>
+                    <FormDesc>A friendly name for you to identify this account.</FormDesc>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="accountType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Account Type</FormLabel>
+                    <FormControl>
+                      <Input {...field} readOnly className="bg-muted cursor-not-allowed" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+               <FormField
+                control={form.control}
+                name="accountHolderName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Account Holder Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter account holder name" {...field} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -102,49 +120,48 @@ const AddBankAccountPage: NextPage = () => {
                   <FormItem>
                     <FormLabel>Account Number</FormLabel>
                     <FormControl>
-                      <Input placeholder="1234567890" {...field} />
+                      <Input placeholder="Enter account number" {...field} />
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-               <FormField
-                control={form.control}
-                name="bankName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Bank Name</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a bank" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {popularBanks.map(bank => (
-                           <SelectItem key={bank.id} value={bank.name}>{bank.name}</SelectItem>
-                        ))}
-                         <SelectItem value="Other">Other (Specify Below)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                     {form.watch('bankName') === 'Other' && (
-                       <FormControl className="mt-2">
-                         <Input placeholder="Specify bank name" {...field} />
-                       </FormControl>
-                     )}
                     <FormMessage />
                   </FormItem>
                 )}
               />
               <FormField
                 control={form.control}
-                name="bankBranch"
+                name="bankName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Bank Branch (Optional)</FormLabel>
+                    <FormLabel>Bank Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Nairobi Main" {...field} />
+                      <Input placeholder="Enter bank name" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="routingNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Routing Number (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter routing number" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="swiftCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>SWIFT Code (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter SWIFT/BIC code" {...field} />
+                    </FormControl>
+                    <FormDesc>Required for international transfers. Typically 8 or 11 characters.</FormDesc>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -163,3 +180,4 @@ const AddBankAccountPage: NextPage = () => {
 };
 
 export default AddBankAccountPage;
+
