@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
 import { AppLogo } from '@/components/shared/app-logo';
-import { ThemeToggleButton } from '@/components/shared/theme-toggle-button';
+// import { ThemeToggleButton } from '@/components/shared/theme-toggle-button'; // Removed
 
 export default function DashboardLayout({
   children,
@@ -78,7 +78,8 @@ export default function DashboardLayout({
             <div className="absolute left-1/2 transform -translate-x-1/2">
                 <AppLogo />
             </div>
-            <ThemeToggleButton /> 
+            {/* <ThemeToggleButton /> */} {/* Removed */}
+            <div className="w-10 h-10"></div> {/* Placeholder for spacing if needed */}
           </header>
            
           {/* Main Page Content */}

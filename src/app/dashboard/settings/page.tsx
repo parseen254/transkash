@@ -2,19 +2,22 @@
 "use client";
 
 import type { NextPage } from 'next';
+import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { useEffect, useState } from 'react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { updateProfile, updateEmail, sendEmailVerification } from 'firebase/auth'; // Added updateEmail and sendEmailVerification
+import { updateProfile, updateEmail, sendEmailVerification } from 'firebase/auth';
 import { db, auth } from '@/lib/firebase';
 import { useAuth } from '@/contexts/auth-context';
+import { useTheme } from '@/contexts/theme-provider';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,8 +33,10 @@ const profileSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 const ProfileSettingsPage: NextPage = () => {
+  const router = useRouter();
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [isFetchingData, setIsFetchingData] = useState(true);
   
   const form = useForm<ProfileFormValues>({
@@ -56,12 +61,11 @@ const ProfileSettingsPage: NextPage = () => {
           form.reset({
             firstName: userData.firstName || user.displayName?.split(' ')[0] || '',
             lastName: userData.lastName || user.displayName?.split(' ').slice(1).join(' ') || '',
-            email: userData.email || user.email || '', // Prefer Firestore email, fallback to auth email
+            email: userData.email || user.email || '',
             phone: userData.phone || '',
             businessName: userData.businessName || '',
           });
         } else {
-          // Fallback if Firestore doc doesn't exist but user is authenticated
           form.reset({
             firstName: user.displayName?.split(' ')[0] || '',
             lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
@@ -74,11 +78,10 @@ const ProfileSettingsPage: NextPage = () => {
       };
       fetchUserData();
     } else if (!authLoading) {
-      // User is not logged in and auth is not loading
       setIsFetchingData(false);
-       // router.push('/login'); // Or handle appropriately
+      // router.push('/login'); // Or handle appropriately
     }
-  }, [user, authLoading, form]);
+  }, [user, authLoading, form, router]);
 
   const onSubmit = async (data: ProfileFormValues) => {
     if (!user) {
@@ -87,18 +90,16 @@ const ProfileSettingsPage: NextPage = () => {
     }
 
     try {
-      // Update Firestore document
       const userDocRef = doc(db, "users", user.uid);
       await setDoc(userDocRef, {
         firstName: data.firstName,
         lastName: data.lastName,
-        email: data.email, // Storing email in Firestore as well
+        email: data.email,
         phone: data.phone || '',
         businessName: data.businessName || '',
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
-      // Update Firebase Auth profile (displayName and email)
       const currentAuthUser = auth.currentUser;
       if (currentAuthUser) {
         await updateProfile(currentAuthUser, {
@@ -106,27 +107,22 @@ const ProfileSettingsPage: NextPage = () => {
         });
         
         if (currentAuthUser.email !== data.email) {
-          // Email change requires re-authentication for some providers or recent sign-in
-          // For simplicity, we'll try to update and let Firebase handle errors.
-          // A more robust flow would prompt for password if required.
           try {
             await updateEmail(currentAuthUser, data.email);
-            // Email updated, send new verification email
             await sendEmailVerification(currentAuthUser);
             toast({
               title: "Email Updated",
-              description: "Your email has been updated. A new verification link has been sent to your new email address. Please verify it.",
+              description: "Your email has been updated. A new verification link has been sent. Please verify it.",
               duration: 7000,
             });
           } catch (emailError: any) {
              console.error("Error updating email in Auth:", emailError);
              toast({
                 title: "Email Update Failed",
-                description: `Could not update email in authentication profile. ${emailError.message}. Your profile details (name, phone, business) were saved.`,
+                description: `Could not update email in authentication profile. ${emailError.message}. Profile details saved.`,
                 variant: "destructive",
                 duration: 9000,
               });
-              // Revert email in form if auth update failed but Firestore succeeded for email
               form.setValue('email', currentAuthUser.email || '');
           }
         }
@@ -134,7 +130,7 @@ const ProfileSettingsPage: NextPage = () => {
       
       toast({
         title: "Profile Updated",
-        description: "Your changes have been saved successfully.",
+        description: "Your personal information has been saved.",
       });
     } catch (error) {
       console.error('Profile update error:', error);
@@ -161,17 +157,20 @@ const ProfileSettingsPage: NextPage = () => {
             <Skeleton className="h-4 w-2/5" />
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2"><Skeleton className="h-5 w-1/4" /><Skeleton className="h-10 w-full" /></div>
-              <div className="space-y-2"><Skeleton className="h-5 w-1/4" /><Skeleton className="h-10 w-full" /></div>
-            </div>
-            <div className="space-y-2"><Skeleton className="h-5 w-1/4" /><Skeleton className="h-10 w-full" /></div>
-            <div className="space-y-2"><Skeleton className="h-5 w-1/4" /><Skeleton className="h-10 w-full" /></div>
-            <div className="space-y-2"><Skeleton className="h-5 w-1/4" /><Skeleton className="h-10 w-full" /></div>
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="space-y-2">
+                <Skeleton className="h-5 w-1/4" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ))}
             <div className="flex justify-end">
               <Skeleton className="h-10 w-24" />
             </div>
           </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><Skeleton className="h-7 w-1/4 mb-1" /><Skeleton className="h-4 w-2/5" /></CardHeader>
+          <CardContent><Skeleton className="h-24 w-full" /></CardContent>
         </Card>
       </div>
     );
@@ -185,7 +184,6 @@ const ProfileSettingsPage: NextPage = () => {
         </div>
      );
   }
-
 
   return (
     <div className="space-y-6">
@@ -289,6 +287,36 @@ const ProfileSettingsPage: NextPage = () => {
               </div>
             </form>
           </Form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+          <CardDescription>Customize the look and feel of the application.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RadioGroup
+            value={theme}
+            onValueChange={(value: "light" | "dark" | "system") => setTheme(value)}
+            className="space-y-2"
+          >
+            <Label htmlFor="theme-light" className="flex items-center space-x-2 cursor-pointer">
+              <RadioGroupItem value="light" id="theme-light" />
+              <span>Light</span>
+            </Label>
+            <Label htmlFor="theme-dark" className="flex items-center space-x-2 cursor-pointer">
+              <RadioGroupItem value="dark" id="theme-dark" />
+              <span>Dark</span>
+            </Label>
+            <Label htmlFor="theme-system" className="flex items-center space-x-2 cursor-pointer">
+              <RadioGroupItem value="system" id="theme-system" />
+              <span>System</span>
+            </Label>
+          </RadioGroup>
+          <p className="text-sm text-muted-foreground mt-2">
+            Current active theme: {resolvedTheme}
+          </p>
         </CardContent>
       </Card>
     </div>

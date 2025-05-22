@@ -13,7 +13,7 @@ import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { AppLogo } from '@/components/shared/app-logo';
-import { ThemeToggleButton } from '@/components/shared/theme-toggle-button';
+// import { ThemeToggleButton } from '@/components/shared/theme-toggle-button'; // Removed
 
 
 interface NavItem {
@@ -114,13 +114,14 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
             )}
             </div>
         </div>
-        <ThemeToggleButton />
+        {/* <ThemeToggleButton /> */} {/* Removed */}
       </div>
 
       <nav className="flex-grow p-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
-          const isActive = (item.href === '/dashboard' && pathname === item.href) || (item.href !== '/dashboard' && pathname.startsWith(item.href));
-
+          const isActive = (item.href === '/dashboard' && pathname === item.href) || 
+                           (item.href !== '/dashboard' && pathname.startsWith(item.href));
+          
           return (
             <Link href={item.href} key={item.label} legacyBehavior>
               <a
