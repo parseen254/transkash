@@ -140,7 +140,7 @@ const DashboardPage: NextPage = () => {
       {/* Sales Trends */}
       <div>
         <h2 className="text-xl font-semibold mb-4 text-foreground">Sales Trends</h2>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2"> {/* Updated to lg:grid-cols-2 */}
           {/* Monthly Revenue */}
           <Card className="bg-secondary shadow-sm">
             <CardHeader>
