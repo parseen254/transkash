@@ -35,7 +35,7 @@ const paymentLinkSchema = z.object({
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: 'Amount must be a valid number with up to two decimal places.' }),
   purpose: z.string().min(1, { message: 'Purpose is required.' }),
   payoutAccountId: z.string().min(1, { message: 'Payout account is required.' }),
-  hasExpiry: z.boolean().default(false),
+  hasExpiry: z.boolean().default(true), // Changed default to true
   expiryDate: z.date().optional(),
 }).refine(data => {
   if (data.hasExpiry && !data.expiryDate) {
@@ -61,7 +61,7 @@ const CreatePaymentLinkPage: NextPage = () => {
       amount: '',
       purpose: '',
       payoutAccountId: '',
-      hasExpiry: false,
+      hasExpiry: true, // Set default to true here as well
       expiryDate: undefined,
     },
   });
