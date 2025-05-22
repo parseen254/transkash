@@ -51,48 +51,37 @@ const LoginPage: NextPage = () => {
     },
   });
 
-  const handleSuccessfulLogin = async (user: FirebaseUser, provider: 'google.com' | 'password') => {
+  const handleSuccessfulLogin = async (user: FirebaseUser) => {
     const userRef = doc(db, "users", user.uid);
     const userSnap = await getDoc(userRef);
 
-    let userProfileData: UserProfile | null = null;
     if (userSnap.exists()) {
-      userProfileData = userSnap.data() as UserProfile;
       await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
-    } else if (provider === 'google.com') { // Create profile if Google sign-in and no doc
-      const newUserProfile: UserProfile = {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        firstName: user.displayName?.split(' ')[0] || '',
-        lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
-        createdAt: serverTimestamp(),
-        lastLoginAt: serverTimestamp(),
-        provider: 'google.com',
-        is2FAEnabled: false, // Default 2FA to false
-      };
-      await setDoc(userRef, newUserProfile);
-      userProfileData = newUserProfile;
+    } else { 
+      // This case should ideally be handled for Google sign-in if profile doesn't exist
+      // For email/password, profile is created on signup.
+      // If it's a Google user and no profile, create one:
+      if (user.providerData.some(p => p.providerId === 'google.com')) {
+        const newUserProfile: UserProfile = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          firstName: user.displayName?.split(' ')[0] || '',
+          lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
+          createdAt: serverTimestamp(),
+          lastLoginAt: serverTimestamp(),
+          provider: 'google.com',
+        };
+        await setDoc(userRef, newUserProfile);
+      }
     }
     
-    // For email/password, profile is created on signup.
-    // For Google, profile is created here if it doesn't exist.
-
-    if (userProfileData?.is2FAEnabled && provider === 'password') {
-      console.log("Backend Action Needed: Generate and send OTP to", user.email);
-      toast({
-        title: "2FA Required",
-        description: "Please check your email for an OTP.",
-      });
-      router.push(`/verify-otp?email=${encodeURIComponent(user.email || '')}`);
-    } else {
-      toast({
-        title: "Login Successful",
-        description: "Redirecting to dashboard...",
-      });
-      router.push('/dashboard');
-    }
+    toast({
+      title: "Login Successful",
+      description: "Redirecting to dashboard...",
+    });
+    router.push('/dashboard');
   };
 
 
@@ -107,7 +96,7 @@ const LoginPage: NextPage = () => {
             title: "Google Sign-In Successful",
             description: "Processing your details...",
           });
-          await handleSuccessfulLogin(user, 'google.com');
+          await handleSuccessfulLogin(user);
         }
       } catch (error: any) {
         console.error('Google Sign-In redirect error:', error);
@@ -127,7 +116,8 @@ const LoginPage: NextPage = () => {
       }
     };
     processRedirect();
-  }, [router, toast]); // handleSuccessfulLogin removed from deps as it causes re-runs
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // handleSuccessfulLogin removed from deps as it causes re-runs
 
   const onSubmit = async (data: LoginFormValues) => {
     setIsSubmittingManual(true);
@@ -136,8 +126,7 @@ const LoginPage: NextPage = () => {
       const user = userCredential.user;
 
       if (user && !user.emailVerified) {
-        await auth.signOut(); // Sign out user if email not verified
-        // It's okay to send verification email again if they try to log in.
+        await auth.signOut(); 
         await sendEmailVerification(user); 
         toast({
           title: "Email Not Verified",
@@ -150,7 +139,7 @@ const LoginPage: NextPage = () => {
         return;
       }
       
-      await handleSuccessfulLogin(user, 'password');
+      await handleSuccessfulLogin(user);
 
     } catch (error: any) {
       console.error('Login error:', error);
@@ -163,14 +152,6 @@ const LoginPage: NextPage = () => {
         variant: "destructive",
       });
     } finally {
-      // Only set to false if not redirecting for 2FA
-      // This state is mainly for the button's loading indicator. 
-      // If redirected, the component unmounts.
-      // If an error occurs, we need to re-enable the button.
-      // Let's assume handleSuccessfulLogin will navigate away or an error will occur.
-      // So, if it's not a 2FA redirect, this makes sense.
-      // The router.push in handleSuccessfulLogin will unmount the page.
-      // So, this finally block might only hit on errors or email not verified.
       setIsSubmittingManual(false); 
     }
   };
@@ -179,7 +160,6 @@ const LoginPage: NextPage = () => {
     setIsSubmittingManual(true); 
     try {
       await signInWithRedirect(auth, googleAuthProvider);
-      // Redirect will occur, so no need to set isSubmittingManual to false here.
     } catch (error: any) {
         console.error('Google Sign-In initiation error:', error);
         toast({
@@ -187,7 +167,7 @@ const LoginPage: NextPage = () => {
           description: error.message || "Could not initiate Google Sign-In. Please try again.",
           variant: "destructive",
         });
-        setIsSubmittingManual(false); // Error occurred, re-enable button
+        setIsSubmittingManual(false); 
     }
   };
   

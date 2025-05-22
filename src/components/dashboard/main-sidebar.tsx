@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Link as LinkIcon, Settings, Landmark, LogOut, ShieldCheck } from 'lucide-react'; // Added ShieldCheck
+import { Home, Link as LinkIcon, Settings, Landmark, LogOut } from 'lucide-react'; // Removed ShieldCheck
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -24,7 +24,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/dashboard/payment-links', label: 'Payment Links', icon: LinkIcon },
   { href: '/dashboard/payouts', label: 'Payout Accounts', icon: Landmark },
-  { href: '/dashboard/security', label: 'Security', icon: ShieldCheck }, // Added Security link
+  // { href: '/dashboard/security', label: 'Security', icon: ShieldCheck }, // Removed Security link
   { href: '/dashboard/settings', label: 'Profile Settings', icon: Settings },
 ];
 

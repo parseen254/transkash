@@ -1,145 +1,212 @@
-
 "use client";
 
 import type { NextPage } from 'next';
-import { useEffect, useState } from 'react';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '@/lib/firebase';
-import { useAuth } from '@/contexts/auth-context';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import * as z from 'zod';
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { Skeleton } from '@/components/ui/skeleton';
+import { AppLogo } from '@/components/shared/app-logo';
+import { HelpCircle } from 'lucide-react';
 import type { UserProfile } from '@/lib/types';
 
-const SecuritySettingsPage: NextPage = () => {
-  const { user, loading: authLoading } = useAuth();
+const signUpSchema = z.object({
+  firstName: z.string().min(1, { message: 'First name is required.' }),
+  lastName: z.string().min(1, { message: 'Last name is required.' }),
+  email: z.string().email({ message: 'Invalid email address.' }),
+  password: z.string().min(8, { message: 'Password must be at least 8 characters.' }),
+  confirmPassword: z.string(),
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords don't match.",
+  path: ['confirmPassword'],
+});
+
+type SignUpFormValues = z.infer<typeof signUpSchema>;
+
+const SignUpPage: NextPage = () => {
+  const router = useRouter();
   const { toast } = useToast();
-  const [is2FAEnabled, setIs2FAEnabled] = useState(false);
-  const [isLoadingUserSettings, setIsLoadingUserSettings] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      const fetchUserSettings = async () => {
-        setIsLoadingUserSettings(true);
-        const userDocRef = doc(db, "users", user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          const userData = userDocSnap.data() as UserProfile;
-          setIs2FAEnabled(userData.is2FAEnabled || false);
-        }
-        setIsLoadingUserSettings(false);
-      };
-      fetchUserSettings();
-    } else if (!authLoading) {
-      setIsLoadingUserSettings(false);
-    }
-  }, [user, authLoading]);
+  const form = useForm<SignUpFormValues>({
+    resolver: zodResolver(signUpSchema),
+    defaultValues: {
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+    },
+  });
 
-  const handleToggle2FA = async (enabled: boolean) => {
-    if (!user) {
-      toast({ title: "Error", description: "You are not logged in.", variant: "destructive" });
-      return;
-    }
-    setIsSaving(true);
+  const onSubmit = async (data: SignUpFormValues) => {
     try {
-      const userDocRef = doc(db, "users", user.uid);
-      await setDoc(userDocRef, { 
-        is2FAEnabled: enabled,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      setIs2FAEnabled(enabled);
-      toast({
-        title: "Security Setting Updated",
-        description: `Two-Factor Authentication has been ${enabled ? 'enabled' : 'disabled'}.`,
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      const user = userCredential.user;
+
+      await updateProfile(user, {
+        displayName: `${data.firstName} ${data.lastName}`,
       });
-    } catch (error) {
-      console.error("Error updating 2FA status:", error);
+
+      await sendEmailVerification(user);
+
+      const userRef = doc(db, "users", user.uid);
+      // Explicitly type the object being set to Firestore
+      const newUserProfileData: Omit<UserProfile, 'uid' | 'lastLoginAt' | 'updatedAt' | 'phone' | 'businessName' | 'photoURL'> & { uid: string; createdAt: any; provider: string } = {
+        uid: user.uid,
+        email: user.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        displayName: `${data.firstName} ${data.lastName}`,
+        createdAt: serverTimestamp(),
+        provider: 'password',
+      };
+      await setDoc(userRef, newUserProfileData);
+      
       toast({
-        title: "Update Failed",
-        description: "Could not update 2FA status.",
+        title: "Account Created!",
+        description: "A verification email has been sent. Please check your inbox (and spam folder) to verify your account before logging in.",
+        duration: 9000,
+      });
+      router.push('/login');
+    } catch (error: any) {
+      console.error('Sign up error:', error);
+      let errorMessage = "An error occurred during sign up. Please try again.";
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "This email address is already in use. Please try a different email or log in.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "The password is too weak. Please choose a stronger password.";
+      }
+      toast({
+        title: "Sign Up Failed",
+        description: errorMessage,
         variant: "destructive",
       });
-    } finally {
-      setIsSaving(false);
     }
   };
-  
-  const isLoading = authLoading || isLoadingUserSettings;
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <Skeleton className="h-9 w-1/3 mb-1" />
-          <Skeleton className="h-5 w-1/2" />
-        </div>
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-7 w-1/4 mb-1" />
-            <Skeleton className="h-4 w-2/5" />
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center space-x-2">
-              <Skeleton className="h-6 w-12" />
-              <Skeleton className="h-5 w-32" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-  
-  if (!user && !authLoading && !isLoadingUserSettings) {
-     return (
-        <div className="space-y-6">
-          <p>Please log in to manage security settings.</p>
-        </div>
-     );
-  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Security Settings</h1>
-        <p className="text-muted-foreground">Manage your account security options.</p>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Two-Factor Authentication (2FA)</CardTitle>
-          <CardDescription>
-            Enhance your account security by requiring a second factor of authentication via email OTP after password login.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="2fa-toggle"
-              checked={is2FAEnabled}
-              onCheckedChange={handleToggle2FA}
-              disabled={isSaving}
-              aria-label="Toggle Two-Factor Authentication"
-            />
-            <Label htmlFor="2fa-toggle" className="text-base">
-              {is2FAEnabled ? '2FA Enabled' : '2FA Disabled'}
-            </Label>
+    <div className="relative min-h-screen bg-background">
+      <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center">
+        <AppLogo />
+        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
+          <HelpCircle className="h-6 w-6" />
+        </Button>
+      </header>
+
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 pt-20">
+        <div className="w-full max-w-sm space-y-8">
+          <h1 className="text-3xl font-semibold text-center text-foreground">
+            Create your account
+          </h1>
+          
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="firstName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Input 
+                        placeholder="First Name" 
+                        {...field} 
+                        className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="lastName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Input 
+                        placeholder="Last Name" 
+                        {...field} 
+                        className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Input 
+                        type="email" 
+                        placeholder="Email" 
+                        {...field} 
+                        className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Input 
+                        type="password" 
+                        placeholder="Password" 
+                        {...field} 
+                        className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="confirmPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Input 
+                        type="password" 
+                        placeholder="Confirm Password" 
+                        {...field} 
+                        className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" className="w-full h-12 rounded-lg text-base" disabled={form.formState.isSubmitting} variant="default">
+                {form.formState.isSubmitting ? 'Signing up...' : 'Sign up'}
+              </Button>
+            </form>
+          </Form>
+          <div className="text-center text-sm">
+            <span className="text-muted-foreground">Already have an account? </span>
+            <Link href="/login" legacyBehavior>
+              <a className="font-medium text-primary hover:underline">Log in</a>
+            </Link>
           </div>
-          {is2FAEnabled && (
-            <p className="mt-4 text-sm text-muted-foreground">
-              When enabled, you will be asked to enter a One-Time Password (OTP) sent to your email address after successfully entering your password.
-            </p>
-          )}
-           <p className="mt-2 text-xs text-muted-foreground">
-              Note: The OTP generation and email sending would be handled by a backend service (e.g., Firebase Functions) in a production environment. This demo simulates the flow.
-            </p>
-        </CardContent>
-      </Card>
+        </div>
+      </main>
     </div>
   );
 };
 
-export default SecuritySettingsPage;
+export default SignUpPage;

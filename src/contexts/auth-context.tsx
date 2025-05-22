@@ -6,6 +6,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import type { UserProfile } from '@/lib/types';
 
 interface AuthContextType {
   user: User | null;
@@ -28,26 +29,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        // Optionally check/create user document in Firestore
         const userRef = doc(db, "users", firebaseUser.uid);
         const userSnap = await getDoc(userRef);
-        if (!userSnap.exists()) {
-          // This might happen if user was created but doc creation failed,
-          // or for users who existed before Firestore user docs were implemented.
-          // For new sign-ups, this doc is usually created during the signup process.
+        
+        if (!userSnap.exists() && firebaseUser.providerData.some(p => p.providerId === 'google.com')) {
+          // Create profile if Google sign-in and no doc exists
+           const newUserProfile: UserProfile = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            photoURL: firebaseUser.photoURL,
+            firstName: firebaseUser.displayName?.split(' ')[0] || '',
+            lastName: firebaseUser.displayName?.split(' ').slice(1).join(' ') || '',
+            createdAt: serverTimestamp(),
+            lastLoginAt: serverTimestamp(),
+            provider: 'google.com',
+          };
           try {
-            await setDoc(userRef, {
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName,
-              photoURL: firebaseUser.photoURL,
-              createdAt: serverTimestamp(),
-              lastLoginAt: serverTimestamp(),
-            }, { merge: true });
+            await setDoc(userRef, newUserProfile);
           } catch (error) {
-            console.error("Error creating user document on auth state change:", error);
+            console.error("Error creating user document for Google user on auth state change:", error);
           }
-        } else {
+        } else if (userSnap.exists()) {
            try {
             await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
           } catch (error) {

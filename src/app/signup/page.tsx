@@ -13,10 +13,11 @@ import { auth, db } from '@/lib/firebase';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form'; // Removed FormLabel
+import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
 import { AppLogo } from '@/components/shared/app-logo';
 import { HelpCircle } from 'lucide-react';
+import type { UserProfile } from '@/lib/types';
 
 const signUpSchema = z.object({
   firstName: z.string().min(1, { message: 'First name is required.' }),
@@ -58,7 +59,8 @@ const SignUpPage: NextPage = () => {
       await sendEmailVerification(user);
 
       const userRef = doc(db, "users", user.uid);
-      await setDoc(userRef, {
+      // Explicitly type the object being set to Firestore
+      const newUserProfileData: Omit<UserProfile, 'uid' | 'lastLoginAt' | 'updatedAt' | 'phone' | 'businessName' | 'photoURL'> & { uid: string; createdAt: any; provider: string } = {
         uid: user.uid,
         email: user.email,
         firstName: data.firstName,
@@ -66,7 +68,8 @@ const SignUpPage: NextPage = () => {
         displayName: `${data.firstName} ${data.lastName}`,
         createdAt: serverTimestamp(),
         provider: 'password',
-      });
+      };
+      await setDoc(userRef, newUserProfileData);
       
       toast({
         title: "Account Created!",

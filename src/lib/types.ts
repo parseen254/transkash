@@ -14,7 +14,7 @@ export interface UserProfile {
   updatedAt?: Timestamp | Date;
   lastLoginAt?: Timestamp | Date;
   provider?: string; // e.g., 'password', 'google.com'
-  is2FAEnabled?: boolean; // Added for 2FA
+  // is2FAEnabled?: boolean; // Removed for custom 2FA
 }
 
 
