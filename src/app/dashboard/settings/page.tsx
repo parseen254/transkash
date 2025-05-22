@@ -21,6 +21,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { ThemePreference, UserProfile } from '@/lib/types';
 
 const profileSchema = z.object({
   firstName: z.string().min(1, { message: 'First name is required.' }),
@@ -28,6 +29,7 @@ const profileSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
   phone: z.string().optional(),
   businessName: z.string().optional(),
+  // themePreference is handled by useTheme, not directly in this form schema
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -36,7 +38,7 @@ const ProfileSettingsPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme(); // theme is ThemePreference
   const [isFetchingData, setIsFetchingData] = useState(true);
   
   const form = useForm<ProfileFormValues>({
@@ -57,7 +59,7 @@ const ProfileSettingsPage: NextPage = () => {
         const userDocRef = doc(db, "users", user.uid);
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
-          const userData = userDocSnap.data();
+          const userData = userDocSnap.data() as UserProfile; // Cast to UserProfile
           form.reset({
             firstName: userData.firstName || user.displayName?.split(' ')[0] || '',
             lastName: userData.lastName || user.displayName?.split(' ').slice(1).join(' ') || '',
@@ -65,7 +67,12 @@ const ProfileSettingsPage: NextPage = () => {
             phone: userData.phone || '',
             businessName: userData.businessName || '',
           });
+          // Theme is handled by ThemeProvider, but we ensure it's set if not present
+          if (userData.themePreference && userData.themePreference !== theme) {
+            setTheme(userData.themePreference);
+          }
         } else {
+          // User exists in Auth but not Firestore (should be rare after signup/auth context fixes)
           form.reset({
             firstName: user.displayName?.split(' ')[0] || '',
             lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
@@ -79,9 +86,8 @@ const ProfileSettingsPage: NextPage = () => {
       fetchUserData();
     } else if (!authLoading) {
       setIsFetchingData(false);
-      // router.push('/login'); // Or handle appropriately
     }
-  }, [user, authLoading, form, router]);
+  }, [user, authLoading, form, router, theme, setTheme]);
 
   const onSubmit = async (data: ProfileFormValues) => {
     if (!user) {
@@ -91,14 +97,17 @@ const ProfileSettingsPage: NextPage = () => {
 
     try {
       const userDocRef = doc(db, "users", user.uid);
-      await setDoc(userDocRef, {
+      const profileDataToSave: Partial<UserProfile> = {
         firstName: data.firstName,
         lastName: data.lastName,
-        email: data.email,
+        email: data.email, // Email will be updated in Auth too
         phone: data.phone || '',
         businessName: data.businessName || '',
         updatedAt: serverTimestamp(),
-      }, { merge: true });
+        // themePreference is saved by setTheme from useTheme hook
+      };
+
+      await setDoc(userDocRef, profileDataToSave, { merge: true });
 
       const currentAuthUser = auth.currentUser;
       if (currentAuthUser) {
@@ -123,6 +132,7 @@ const ProfileSettingsPage: NextPage = () => {
                 variant: "destructive",
                 duration: 9000,
               });
+              // Revert email in form if auth update fails
               form.setValue('email', currentAuthUser.email || '');
           }
         }
@@ -297,8 +307,8 @@ const ProfileSettingsPage: NextPage = () => {
         </CardHeader>
         <CardContent>
           <RadioGroup
-            value={theme}
-            onValueChange={(value: "light" | "dark" | "system") => setTheme(value)}
+            value={theme} // Directly use theme from useTheme()
+            onValueChange={(value) => setTheme(value as ThemePreference)} // setTheme now handles Firestore
             className="space-y-2"
           >
             <Label htmlFor="theme-light" className="flex items-center space-x-2 cursor-pointer">

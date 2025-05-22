@@ -1,6 +1,8 @@
 
 import type { Timestamp } from 'firebase/firestore';
 
+export type ThemePreference = "light" | "dark" | "system";
+
 export interface UserProfile {
   uid: string;
   email: string | null;
@@ -14,7 +16,7 @@ export interface UserProfile {
   updatedAt?: Timestamp | Date;
   lastLoginAt?: Timestamp | Date;
   provider?: string; // e.g., 'password', 'google.com'
-  // is2FAEnabled?: boolean; // Removed for custom 2FA
+  themePreference?: ThemePreference;
 }
 
 

@@ -58,7 +58,8 @@ const SignUpPage: NextPage = () => {
 
       
       const userRef = doc(db, "users", user.uid);
-      const newUserProfileData: Omit<UserProfile, 'uid' | 'lastLoginAt' | 'updatedAt' | 'phone' | 'businessName' | 'photoURL'> & { uid: string; createdAt: any; provider: string } = {
+      // Explicitly type the object being set to Firestore
+      const newUserProfileData: Omit<UserProfile, 'uid' | 'lastLoginAt' | 'updatedAt' | 'phone' | 'businessName' | 'photoURL'> & { uid: string; createdAt: any; provider: string; themePreference: 'system' } = {
         uid: user.uid,
         email: user.email,
         firstName: data.firstName,
@@ -66,6 +67,7 @@ const SignUpPage: NextPage = () => {
         displayName: `${data.firstName} ${data.lastName}`,
         createdAt: serverTimestamp(),
         provider: 'password',
+        themePreference: 'system', // Default theme preference
       };
       await setDoc(userRef, newUserProfileData);
       

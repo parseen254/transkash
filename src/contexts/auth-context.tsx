@@ -44,6 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             createdAt: serverTimestamp(),
             lastLoginAt: serverTimestamp(),
             provider: 'google.com',
+            themePreference: 'system', // Default theme preference
           };
           try {
             await setDoc(userRef, newUserProfile);
@@ -52,9 +53,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } else if (userSnap.exists()) {
            try {
-            await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
+            // Update last login and ensure themePreference exists
+            const updateData: Partial<UserProfile> = { lastLoginAt: serverTimestamp() };
+            if (!userSnap.data()?.themePreference) {
+              updateData.themePreference = 'system';
+            }
+            await setDoc(userRef, updateData, { merge: true });
           } catch (error) {
-            console.error("Error updating last login time:", error);
+            console.error("Error updating user document on auth state change:", error);
           }
         }
       } else {
