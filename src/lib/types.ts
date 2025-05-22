@@ -5,18 +5,24 @@ export type ThemePreference = "light" | "dark" | "system";
 
 export interface UserProfile {
   uid: string;
-  email: string | null;
+  email: string | null; // Firebase Auth email (login email)
   firstName?: string;
   lastName?: string;
   displayName?: string | null;
-  phone?: string;
-  businessName?: string;
+  personalPhone?: string; // Renamed from 'phone'
   photoURL?: string | null;
   createdAt?: Timestamp | Date;
   updatedAt?: Timestamp | Date;
   lastLoginAt?: Timestamp | Date;
   provider?: string; // e.g., 'password', 'google.com'
   themePreference?: ThemePreference;
+
+  // Business Profile Fields
+  businessName?: string;
+  businessEmail?: string;
+  businessPhone?: string;
+  businessAddress?: string;
+  businessWebsite?: string;
 }
 
 
