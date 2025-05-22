@@ -4,7 +4,7 @@
 import type { NextPage } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense, useCallback } from 'react';
-import { HelpCircle, Smartphone, CreditCard, Receipt, AlertCircle } from 'lucide-react';
+import { HelpCircle, Smartphone, CreditCard, Receipt, AlertCircle, PartyPopper, ListChecks } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLogo } from '@/components/shared/app-logo';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -164,7 +164,7 @@ const PaymentForOrderContent: React.FC = () => {
        const parsedFullYear = `20${yearStr}`;
 
        const expiryDateObject = parse(`${parsedMonth}/01/${parsedFullYear}`, 'MM/dd/yyyy', new Date());
-       if (!isValid(expiryDateObject) || !isFuture(new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() +1, 0 ))) { // Check end of expiry month
+       if (!isValid(expiryDateObject) || !isFuture(new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() +1, 0 ))) { 
            toast({ title: "Invalid Expiry Date", description: "Card expiry date is in the past or invalid.", variant: "destructive" });
            setIsProcessing(false);
            return;
@@ -197,10 +197,9 @@ const PaymentForOrderContent: React.FC = () => {
 
     setIsProcessing(false);
     if (paymentSuccessful) {
-        router.push('/payment/successful');
+        router.push(`/payment/successful?paymentLinkId=${currentPaymentLink.id}`);
     } else {
-        // Optionally, redirect to failure page or just show toast.
-        // router.push('/payment/failed'); 
+        router.push(`/payment/failed?paymentLinkId=${currentPaymentLink.id}`);
     }
   };
 
@@ -211,7 +210,6 @@ const PaymentForOrderContent: React.FC = () => {
     if (value.length > 2) {
       value = `${value.slice(0, 2)}/${value.slice(2)}`;
     } else if (value.length === 2 && cardExpiry.length === 1 && !cardExpiry.includes('/')) {
-      // Add slash automatically if user types 2 digits for month
       value = `${value}/`;
     }
     setCardExpiry(value);
@@ -260,9 +258,9 @@ const PaymentForOrderContent: React.FC = () => {
           <span className="font-medium text-foreground">{currentPaymentLink.reference}</span>
         </div>
          {currentPaymentLink.purpose && (
-          <div className="flex justify-between">
+          <div className="flex justify-between text-right">
             <span className="text-muted-foreground">Purpose</span>
-            <span className="font-medium text-foreground text-right">{currentPaymentLink.purpose}</span>
+            <span className="font-medium text-foreground ">{currentPaymentLink.purpose}</span>
           </div>
         )}
         <hr className="border-border my-2 !mt-3 !mb-3" />
@@ -359,7 +357,7 @@ const PaymentForOrderContent: React.FC = () => {
            </div>
             <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing || !isCardFormValid()}>
                 {isProcessing ? <Spinner className="mr-2" /> : <CreditCard className="mr-2 h-5 w-5" />}
-                {isProcessing ? 'Processing...' : payButtonText}
+                {isProcessing ? 'Processing...' : `Pay ${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)}`}
             </Button>
         </div>
       )}
@@ -399,5 +397,6 @@ const PaymentForOrderPage: NextPage = () => {
 };
 
 export default PaymentForOrderPage;
+    
 
     
