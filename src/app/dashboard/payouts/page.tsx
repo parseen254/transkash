@@ -82,9 +82,9 @@ const PayoutAccountsPage: NextPage = () => {
             )}
           </CardContent>
         </Card>
-        <div className="mt-4">
+        <div className="mt-4 flex justify-end">
           <Link href="/dashboard/payouts/add-bank" legacyBehavior>
-            <Button variant="outline">
+            <Button> {/* Removed variant="outline" to use default primary style */}
               <PlusCircle className="mr-2 h-4 w-4" /> Add bank account
             </Button>
           </Link>
@@ -111,9 +111,9 @@ const PayoutAccountsPage: NextPage = () => {
             )}
           </CardContent>
         </Card>
-        <div className="mt-4">
+        <div className="mt-4 flex justify-end">
           <Link href="/dashboard/payouts/add-mpesa" legacyBehavior>
-            <Button variant="outline">
+            <Button> {/* Removed variant="outline" to use default primary style */}
               <PlusCircle className="mr-2 h-4 w-4" /> Add M-Pesa account
             </Button>
           </Link>
