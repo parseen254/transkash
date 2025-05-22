@@ -4,7 +4,7 @@
 import type { NextPage } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
-import { HelpCircle, Smartphone, CreditCard, ListChecks, AlertCircle } from 'lucide-react';
+import { HelpCircle, Smartphone, CreditCard, Receipt, AlertCircle } from 'lucide-react'; // Updated import
 import { Button } from '@/components/ui/button';
 import { AppLogo } from '@/components/shared/app-logo';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -33,7 +33,7 @@ interface PaymentOption {
 
 const paymentOptions: PaymentOption[] = [
   { value: 'mpesa_stk', name: 'M-Pesa (STK Push)', description: 'Pay with M-Pesa STK Push', icon: Smartphone },
-  { value: 'mpesa_paybill', name: 'M-Pesa (Paybill)', description: 'Pay using M-Pesa Paybill', icon: ListChecks },
+  { value: 'mpesa_paybill', name: 'M-Pesa (Paybill)', description: 'Pay using M-Pesa Paybill', icon: Receipt }, // Changed icon here
   { value: 'card', name: 'Card Transfer', description: 'Pay with Card Transfer', icon: CreditCard },
 ];
 
@@ -256,7 +256,7 @@ const PaymentForOrderContent: React.FC = () => {
                 <li>Enter your M-Pesa PIN and confirm</li>
             </ul>
             <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing}>
-                {isProcessing ? <Spinner className="mr-2" /> : <ListChecks className="mr-2 h-5 w-5" />}
+                {isProcessing ? <Spinner className="mr-2" /> : <Receipt className="mr-2 h-5 w-5" />} {/* Changed icon here */}
                 {isProcessing ? 'Confirming...' : "I've sent the money"}
             </Button>
         </div>
@@ -307,3 +307,6 @@ const PaymentForOrderPage: NextPage = () => {
 };
 
 export default PaymentForOrderPage;
+
+
+    
