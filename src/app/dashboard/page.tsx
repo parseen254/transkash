@@ -17,6 +17,7 @@ import { db } from '@/lib/firebase';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 interface StatCardData {
   title: string;
@@ -31,14 +32,13 @@ const statData: StatCardData[] = [
   { title: 'Customer Retention Rate', value: '0%', change: 'N/A' },
 ];
 
-// Keep dummy data for charts to allow easy testing, but UI will handle empty state
-const monthlyRevenueChartData = [
+const monthlyRevenueChartData: { month: string, revenue: number }[] = [
   // { month: 'Jan', revenue: 1500 }, { month: 'Feb', revenue: 1800 }, { month: 'Mar', revenue: 1300 },
   // { month: 'Apr', revenue: 2200 }, { month: 'May', revenue: 2000 }, { month: 'Jun', revenue: 2800 },
   // { month: 'Jul', revenue: 2500 },
 ];
 
-const quarterlySalesChartData = [
+const quarterlySalesChartData: { name: string, sales: number }[] = [
   // { name: 'Q1', sales: 8000 }, { name: 'Q2', sales: 12000 },
   // { name: 'Q3', sales: 9500 }, { name: 'Q4', sales: 15000 },
 ];
@@ -53,6 +53,26 @@ const topSellingProductsData: TopProductData[] = [
 
 const monthlyRevenueChartConfig = { revenue: { label: "Revenue", color: "hsl(var(--chart-1))" } } satisfies ChartConfig;
 const quarterlySalesChartConfig = { sales: { label: "Sales", color: "hsl(var(--chart-2))" } } satisfies ChartConfig;
+
+// Reusable component for "No Data" display within chart cards
+const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: () => void; className?: string }) => (
+  <div className={cn("flex flex-col items-center justify-center text-center h-full gap-2 min-h-[180px]", className)}>
+    <Info className="h-10 w-10 text-muted-foreground" />
+    <h3 className="text-md font-semibold text-foreground">No Data Available</h3>
+    <p className="text-xs text-muted-foreground max-w-[280px]">
+      There is currently no data to display for this chart.
+    </p>
+    <Button 
+      variant="secondary" 
+      size="sm" 
+      className="rounded-full px-3 h-8 text-xs"
+      onClick={onRefreshClick} // In a real app, wire this to a refresh function
+    >
+      <RefreshCw className="mr-1.5 h-3 w-3" />
+      Refresh
+    </Button>
+  </div>
+);
 
 
 const DashboardPage: NextPage = () => {
@@ -73,7 +93,7 @@ const DashboardPage: NextPage = () => {
     const q = query(
       transactionsCollection, 
       where('userId', '==', user.uid), 
-      orderBy('createdAt', 'desc'), // Order by creation timestamp for recent
+      orderBy('createdAt', 'desc'), 
       limit(5)
     );
 
@@ -154,7 +174,7 @@ const DashboardPage: NextPage = () => {
                 <TableBody>
                   {recentTransactions.map((transaction) => (
                     <TableRow key={transaction.id} className="h-[72px]">
-                      <TableCell className="px-4 py-2 text-sm text-muted-foreground">{formatDate(transaction.createdAt)}</TableCell> {/* Use createdAt */}
+                      <TableCell className="px-4 py-2 text-sm text-muted-foreground">{formatDate(transaction.createdAt)}</TableCell>
                       <TableCell className="px-4 py-2 text-sm font-normal text-foreground">{transaction.customer}</TableCell>
                       <TableCell className="px-4 py-2 text-sm text-muted-foreground">{transaction.currency} {transaction.amount.toFixed(2)}</TableCell>
                       <TableCell className="px-4 py-2 text-sm">
@@ -193,7 +213,7 @@ const DashboardPage: NextPage = () => {
                     </LineChart>
                 </ChartContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">No data available for this chart.</div>
+                <NoChartDataDisplay />
               )}
             </CardContent>
           </Card>
@@ -218,7 +238,7 @@ const DashboardPage: NextPage = () => {
                         </BarChart>
                     </ChartContainer>
                 ) : (
-                     <div className="flex items-center justify-center h-full text-muted-foreground">No data available for this chart.</div>
+                     <NoChartDataDisplay />
                 )}
             </CardContent>
           </Card>
@@ -231,41 +251,31 @@ const DashboardPage: NextPage = () => {
                     <p className="text-base text-muted-foreground font-medium">N/A</p>
                 </div>
             </CardHeader>
-            <CardContent className="space-y-6 p-6 pt-2">
+            <CardContent className="p-6 pt-2 min-h-[210px]"> {/* Added min-h to ensure NoChartDataDisplay has space */}
                 {topSellingProductsData.length > 0 ? (
-                    topSellingProductsData.map((product) => (
-                        <div key={product.name}>
-                            <div className="flex justify-between text-[13px] font-bold text-muted-foreground tracking-[0.015em] mb-1">
-                                <span>{product.name}</span>
+                    <div className="space-y-6">
+                        {topSellingProductsData.map((product) => (
+                            <div key={product.name}>
+                                <div className="flex justify-between text-[13px] font-bold text-muted-foreground tracking-[0.015em] mb-1">
+                                    <span>{product.name}</span>
+                                </div>
+                                <div className="h-2 w-full bg-muted rounded-full">
+                                    <div className="h-2 bg-primary rounded-full" style={{ width: `${product.value}%` }} />
+                                </div>
                             </div>
-                            <div className="h-2 w-full bg-muted rounded-full">
-                                <div className="h-2 bg-primary rounded-full" style={{ width: `${product.value}%` }} />
-                            </div>
-                        </div>
-                    ))
+                        ))}
+                    </div>
                 ) : (
-                     <div className="flex items-center justify-center h-[100px] text-muted-foreground">No data available for this chart.</div>
+                     <NoChartDataDisplay className="py-6"/> // Added some padding to make it look less cramped
                 )}
             </CardContent>
           </Card>
         </div>
       </div>
       
-      <div className="p-4">
-        <Card className="border-dashed border-2 border-border bg-card shadow-none rounded-xl">
-          <CardContent className="px-6 py-14 text-center flex flex-col items-center justify-center min-h-[200px] gap-2">
-              <Info className="h-12 w-12 text-muted-foreground mb-2" />
-              <h3 className="text-lg font-bold leading-tight tracking-[-0.015em] text-foreground mb-0">No Data Available</h3>
-              <p className="text-sm text-foreground font-normal leading-normal mb-2 max-w-[480px]">There is currently no data to display for this chart. Please check back later.</p>
-              <Button variant="secondary" className="rounded-full h-10 px-4 text-sm font-bold tracking-[0.015em] bg-secondary text-secondary-foreground hover:bg-secondary/90"><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
-          </CardContent>
-        </Card>
-      </div>
+      {/* The redundant "No Data Available" card at the bottom has been removed. */}
     </div>
   );
 };
 
 export default DashboardPage;
-
-
-    
