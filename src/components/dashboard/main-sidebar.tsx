@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Link as LinkIcon, Settings, Landmark, LogOut } from 'lucide-react';
+import { Home, Link as LinkIcon, Settings, Landmark, LogOut, Users } from 'lucide-react'; // Added Home and Users
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -12,7 +12,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
-import { AppLogo } from '@/components/shared/app-logo'; // Import the AppLogo component
+import { AppLogo } from '@/components/shared/app-logo';
 
 interface NavItem {
   href: string;
@@ -21,8 +21,10 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  { href: '/dashboard/home', label: 'Home', icon: Home },
   { href: '/dashboard/payment-links', label: 'Payment Links', icon: LinkIcon },
   { href: '/dashboard/payouts', label: 'Payout Accounts', icon: Landmark },
+  // { href: '/dashboard/customers', label: 'Customers', icon: Users }, // Example, can be added later
   { href: '/dashboard/settings', label: 'Profile Settings', icon: Settings },
 ];
 
@@ -62,7 +64,7 @@ export function MainSidebar() {
 
   return (
     <aside className="w-64 h-screen bg-sidebar text-sidebar-foreground flex flex-col fixed top-0 left-0 shadow-lg">
-      <div className="p-4 border-b border-sidebar-border flex items-center justify-center h-[65px]"> {/* Adjusted for consistent height with login page header and centered logo */}
+      <div className="p-4 border-b border-sidebar-border flex items-center justify-center h-[65px]">
         <Link href="/dashboard" legacyBehavior>
           <a className="flex items-center">
             <AppLogo />
@@ -105,9 +107,12 @@ export function MainSidebar() {
             <a
               className={cn(
                 'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                pathname.startsWith(item.href)
+                // Check for exact match for home, startsWith for others to handle sub-routes
+                item.href === '/dashboard/home' ? 
+                  (pathname === item.href || pathname === '/dashboard' ? 'bg-sidebar-primary text-sidebar-primary-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')
+                : (pathname.startsWith(item.href)
                   ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')
               )}
             >
               <item.icon className="h-5 w-5" />

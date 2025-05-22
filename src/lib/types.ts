@@ -43,6 +43,7 @@ export interface PaymentLink {
   expiryDate?: Timestamp | Date; // Optional
   status: 'Active' | 'Expired' | 'Disabled' | 'Paid';
   payoutAccountId?: string; // ID of the payout account
+  payoutAccount?: string; // ID of the payout account - TEMPORARY for edit form
   shortUrl?: string; // The actual shareable link
   updatedAt?: Timestamp | Date;
 }
@@ -54,4 +55,19 @@ export interface PaymentDetails {
   date: string; // Formatted date string
   status?: 'Successful' | 'Failed' | 'Pending';
   paymentReason?: string;
+}
+
+export interface Transaction {
+  id: string;
+  date: string; // Formatted date string for display
+  customer: string;
+  amount: string; // Formatted amount for display
+  status: 'Completed' | 'Pending' | 'Failed';
+  // Add other necessary fields that PaymentLink has if this is derived from it
+  userId: string;
+  currency: string;
+  linkName: string;
+  purpose: string;
+  creationDate: Date | Timestamp;
+  reference: string;
 }
