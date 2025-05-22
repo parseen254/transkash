@@ -7,16 +7,17 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { signInWithEmailAndPassword, signInWithRedirect, sendEmailVerification, getRedirectResult, type UserCredential } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithRedirect, sendEmailVerification, getRedirectResult } from 'firebase/auth';
 import { auth, googleAuthProvider, db } from '@/lib/firebase';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { CenteredCardLayout } from '@/components/layouts/centered-card-layout';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form'; // Removed FormLabel as per design
 import { useToast } from '@/hooks/use-toast';
-import { ChromeIcon } from 'lucide-react';
-import React, { useEffect, useState } from 'react'; // Added useEffect and useState
+import { HelpCircle } from 'lucide-react'; // Added HelpCircle
+import React, { useEffect, useState } from 'react';
+import { AppLogo } from '@/components/shared/app-logo'; // Added AppLogo
+import { Skeleton } from '@/components/ui/skeleton'; // For loading state
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
@@ -28,7 +29,8 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 const LoginPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
-  const [isProcessingRedirect, setIsProcessingRedirect] = useState(true); // To handle redirect state
+  const [isProcessingRedirect, setIsProcessingRedirect] = useState(true);
+  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -38,19 +40,16 @@ const LoginPage: NextPage = () => {
     },
   });
 
-  // Handle Firebase Redirect Result
   useEffect(() => {
     const processRedirect = async () => {
+      setIsProcessingRedirect(true);
       try {
         const result = await getRedirectResult(auth);
-        setIsProcessingRedirect(false); // Finished processing attempt
-
         if (result) {
-          // User signed in via redirect
           const user = result.user;
           toast({
-            title: "Processing Google Sign-In...",
-            description: "Please wait.",
+            title: "Google Sign-In Successful",
+            description: "Processing your details...",
           });
 
           const userRef = doc(db, "users", user.uid);
@@ -71,17 +70,13 @@ const LoginPage: NextPage = () => {
           } else {
             await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
           }
-
           toast({
             title: "Login Successful",
             description: "Redirecting to dashboard...",
           });
           router.push('/dashboard');
         }
-        // If result is null, it means no redirect sign-in happened, or it was already handled.
-        // Or the user navigated to the login page directly.
       } catch (error: any) {
-        setIsProcessingRedirect(false);
         console.error('Google Sign-In redirect error:', error);
         let errorMessage = error.message || "An error occurred with Google Sign-In. Please try again.";
         if (error.code === 'auth/account-exists-with-different-credential') {
@@ -92,14 +87,15 @@ const LoginPage: NextPage = () => {
           description: errorMessage,
           variant: "destructive",
         });
+      } finally {
+        setIsProcessingRedirect(false);
       }
     };
-
     processRedirect();
   }, [router, toast]);
 
-
   const onSubmit = async (data: LoginFormValues) => {
+    setIsSubmittingManual(true);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, data.email, data.password);
       const user = userCredential.user;
@@ -135,16 +131,15 @@ const LoginPage: NextPage = () => {
         description: errorMessage,
         variant: "destructive",
       });
+    } finally {
+      setIsSubmittingManual(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
-    // Initiate redirect flow
+    setIsSubmittingManual(true); // Also indicate loading for Google sign-in start
     try {
       await signInWithRedirect(auth, googleAuthProvider);
-      // The browser will redirect to Google, and then back to this page.
-      // The useEffect hook with getRedirectResult will handle the outcome.
-      // Show a loading/redirecting state if needed
       toast({
         title: "Redirecting to Google...",
         description: "Please complete the sign-in with Google."
@@ -156,73 +151,121 @@ const LoginPage: NextPage = () => {
           description: error.message || "Could not initiate Google Sign-In. Please try again.",
           variant: "destructive",
         });
+        setIsSubmittingManual(false);
     }
   };
   
   if (isProcessingRedirect) {
     return (
-      <CenteredCardLayout title="Processing Sign-In...">
-        <div className="flex justify-center items-center p-10">
-          <p className="text-muted-foreground">Please wait while we check your sign-in status...</p>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
+        <div className="w-full max-w-sm space-y-6">
+          <Skeleton className="h-8 w-3/4 mx-auto" />
+          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-6 w-1/2 mx-auto" />
+          <Skeleton className="h-10 w-full rounded-lg" />
         </div>
-      </CenteredCardLayout>
+      </div>
     );
   }
 
+  const isFormSubmitting = form.formState.isSubmitting || isSubmittingManual;
+
   return (
-    <CenteredCardLayout title="Login to Your Account">
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <FormField
-            control={form.control}
-            name="email"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Email Address</FormLabel>
-                <FormControl>
-                  <Input type="email" placeholder="you@example.com" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="password"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Password</FormLabel>
-                <FormControl>
-                  <Input type="password" placeholder="••••••••" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? 'Logging in...' : 'Login'}
+    <div className="relative min-h-screen bg-background">
+      <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center">
+        <AppLogo />
+        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
+          <HelpCircle className="h-6 w-6" />
+        </Button>
+      </header>
+
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 pt-20"> {/* Added pt-20 for header spacing */}
+        <div className="w-full max-w-sm space-y-8">
+          <h1 className="text-3xl font-semibold text-center text-foreground">
+            Welcome back
+          </h1>
+          
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    {/* No FormLabel as per design */}
+                    <FormControl>
+                      <Input 
+                        type="email" 
+                        placeholder="Email" 
+                        {...field} 
+                        className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    {/* No FormLabel as per design */}
+                    <FormControl>
+                      <Input 
+                        type="password" 
+                        placeholder="Password" 
+                        {...field} 
+                        className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="text-right">
+                <Link href="/forgot-password" legacyBehavior>
+                  <a className="text-sm text-muted-foreground hover:text-primary hover:underline">
+                    Forgot password?
+                  </a>
+                </Link>
+              </div>
+              <Button type="submit" className="w-full h-12 rounded-lg text-base" disabled={isFormSubmitting} variant="default">
+                {isFormSubmitting ? 'Logging in...' : 'Log in'}
+              </Button>
+            </form>
+          </Form>
+
+          <div className="flex items-center">
+            <div className="flex-grow border-t border-border"></div>
+            <span className="mx-4 text-xs text-muted-foreground uppercase">Or continue with</span>
+            <div className="flex-grow border-t border-border"></div>
+          </div>
+
+          <Button 
+            variant="secondary" 
+            className="w-full h-12 rounded-lg text-base text-foreground" 
+            onClick={handleGoogleSignIn} 
+            disabled={isFormSubmitting}
+          >
+            {/* ChromeIcon removed as per design */}
+            Google
           </Button>
-        </form>
-      </Form>
-      <div className="my-4 flex items-center before:mt-0.5 before:flex-1 before:border-t before:border-border after:mt-0.5 after:flex-1 after:border-t after:border-border">
-        <p className="mx-4 mb-0 text-center font-semibold text-muted-foreground">OR</p>
-      </div>
-      <Button variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={form.formState.isSubmitting}>
-        <ChromeIcon className="mr-2 h-4 w-4" /> Continue with Google
-      </Button>
-      <div className="mt-6 text-center text-sm">
-        <Link href="/forgot-password" legacyBehavior>
-          <a className="font-medium text-primary hover:underline">Forgot Password?</a>
-        </Link>
-      </div>
-      <div className="mt-4 text-center text-sm">
-        New to pesi X?{' '}
-        <Link href="/signup" legacyBehavior>
-          <a className="font-medium text-primary hover:underline">Create an account</a>
-        </Link>
-      </div>
-    </CenteredCardLayout>
+
+          <div className="text-center text-sm">
+            <span className="text-muted-foreground">Don't have an account? </span>
+            <Link href="/signup" legacyBehavior>
+              <a className="font-medium text-primary hover:underline">Sign up</a>
+            </Link>
+          </div>
+        </div>
+      </main>
+    </div>
   );
 };
 
 export default LoginPage;
+
+    
