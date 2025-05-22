@@ -24,7 +24,7 @@ import type { PaymentLink, PayoutAccount } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'; // Changed getDocs to onSnapshot
 import { Skeleton } from '@/components/ui/skeleton';
 
 
@@ -56,10 +56,11 @@ type EditPaymentLinkFormValues = z.infer<typeof editPaymentLinkSchema>;
 const EditPaymentLinkPage: NextPage = () => {
   const router = useRouter();
   const params = useParams();
-  const { id: paymentLinkId } = params;
+  const { id: paymentLinkIdString } = params;
+  const paymentLinkId = paymentLinkIdString as string;
   const { toast } = useToast();
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading, initialLoadComplete } = useAuth();
+  const [loadingPageData, setLoadingPageData] = useState(true);
   const [payoutAccounts, setPayoutAccounts] = useState<PayoutAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
 
@@ -81,27 +82,28 @@ const EditPaymentLinkPage: NextPage = () => {
   const watchHasExpiry = form.watch('hasExpiry');
 
   useEffect(() => {
+    if (!initialLoadComplete) return;
+
     if (!user) {
         router.push('/login');
         return;
     }
-    // Fetch payout accounts
+    
     setLoadingAccounts(true);
     const accQuery = query(collection(db, 'payoutAccounts'), where('userId', '==', user.uid), where('status', '==', 'Active'));
-    getDocs(accQuery).then(snapshot => {
-      setPayoutAccounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PayoutAccount)));
+    const unsubscribeAccounts = onSnapshot(accQuery, snapshot => {
+      setPayoutAccounts(snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as PayoutAccount)));
       setLoadingAccounts(false);
-    }).catch(err => {
+    }, err => {
       console.error("Error fetching payout accounts: ", err);
       toast({ title: "Error", description: "Could not fetch payout accounts.", variant: "destructive" });
       setLoadingAccounts(false);
     });
 
-    // Fetch payment link data
     if (paymentLinkId) {
-      setLoading(true);
-      const linkDocRef = doc(db, 'paymentLinks', paymentLinkId as string);
-      getDoc(linkDocRef).then(docSnap => {
+      setLoadingPageData(true);
+      const linkDocRef = doc(db, 'paymentLinks', paymentLinkId);
+      const unsubscribeLink = onSnapshot(linkDocRef, (docSnap) => {
         if (docSnap.exists()) {
           const linkData = docSnap.data() as PaymentLink;
           if (linkData.userId !== user.uid) {
@@ -111,31 +113,37 @@ const EditPaymentLinkPage: NextPage = () => {
           }
           form.reset({
             ...linkData,
-            amount: linkData.amount, // Keep as number
+            amount: linkData.amount, 
             expiryDate: linkData.expiryDate instanceof Timestamp ? linkData.expiryDate.toDate() : undefined,
           });
         } else {
           toast({ title: "Error", description: "Payment link not found.", variant: "destructive" });
           router.push('/dashboard/payment-links');
         }
-        setLoading(false);
-      }).catch(err => {
+        setLoadingPageData(false);
+      }, err => {
         console.error("Error fetching payment link: ", err);
         toast({ title: "Error", description: "Could not load payment link details.", variant: "destructive" });
-        setLoading(false);
+        setLoadingPageData(false);
       });
+      return () => {
+        unsubscribeAccounts();
+        unsubscribeLink();
+      }
     } else {
-      setLoading(false);
+      setLoadingPageData(false); // No ID, so no data to load for link
+      return () => unsubscribeAccounts();
     }
-  }, [paymentLinkId, user, form, router, toast]);
+  }, [paymentLinkId, user, initialLoadComplete, form, router, toast]);
 
   const onSubmit = async (data: EditPaymentLinkFormValues) => {
     if (!user || !paymentLinkId) return;
 
     try {
-      const linkDocRef = doc(db, 'paymentLinks', paymentLinkId as string);
+      const linkDocRef = doc(db, 'paymentLinks', paymentLinkId);
       const updateData: Partial<PaymentLink> = {
         ...data,
+        userId: user.uid, // Ensure userId is part of update data
         amount: data.amount,
         expiryDate: data.hasExpiry && data.expiryDate ? Timestamp.fromDate(data.expiryDate) : null,
         updatedAt: serverTimestamp() as Timestamp,
@@ -153,7 +161,9 @@ const EditPaymentLinkPage: NextPage = () => {
     }
   };
 
-  if (loading || loadingAccounts) {
+  const isLoading = authLoading || !initialLoadComplete || loadingPageData || loadingAccounts;
+
+  if (isLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-60 mb-4" />
@@ -171,11 +181,11 @@ const EditPaymentLinkPage: NextPage = () => {
 
   return (
     <div className="space-y-6">
-      <Link href={paymentLinkId ? `/dashboard/payment-links/${paymentLinkId}` : "/dashboard/payment-links"} legacyBehavior>
-        <a className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4">
+      <Link href={paymentLinkId ? `/dashboard/payment-links/${paymentLinkId}` : "/dashboard/payment-links"}>
+        <Button variant="link" className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4 px-0">
           <ArrowLeft className="h-4 w-4" />
           Back to Payment Link Details
-        </a>
+        </Button>
       </Link>
       <Card className="max-w-2xl mx-auto">
         <CardHeader>
@@ -196,7 +206,7 @@ const EditPaymentLinkPage: NextPage = () => {
                     <FormLabel>Payout Account</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange} disabled={loadingAccounts}>
                       <FormControl><SelectTrigger>{loadingAccounts ? "Loading..." : <SelectValue placeholder="Select a payout account" />}</SelectTrigger></FormControl>
-                      <SelectContent>{payoutAccounts.map(acc => ( <SelectItem key={acc.id} value={acc.id}>{acc.accountName} ({acc.type === 'bank' ? acc.bankName : acc.accountNumber})</SelectItem> ))}</SelectContent>
+                      <SelectContent>{payoutAccounts.map(acc => ( <SelectItem key={acc.id} value={acc.id}>{acc.accountName} ({acc.type === 'bank' && acc.bankName ? acc.bankName : acc.accountNumber})</SelectItem> ))}</SelectContent>
                     </Select>
                     <FormMessage />
                   </FormItem>

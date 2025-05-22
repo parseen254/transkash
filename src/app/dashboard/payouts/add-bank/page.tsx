@@ -27,7 +27,7 @@ const bankAccountSchema = z.object({
   swiftCode: z.string()
     .min(8, { message: "SWIFT/BIC code must be between 8 and 11 characters." })
     .max(11, { message: "SWIFT/BIC code must be between 8 and 11 characters." })
-    .regex(/^[A-Za-z0-9]{8,11}$/, { message: "Invalid SWIFT/BIC code format." }), // Allow A-Z for swift
+    .regex(/^[A-Za-z0-9]{8,11}$/, { message: "Invalid SWIFT/BIC code format." }),
 });
 
 type BankAccountFormValues = z.infer<typeof bankAccountSchema>;
@@ -57,20 +57,16 @@ const AddBankAccountPage: NextPage = () => {
 
     try {
       const newAccountData: Omit<PayoutAccount, 'id' | 'createdAt' | 'updatedAt' > = {
-        userId: user.uid,
+        userId: user.uid, // Ensure userId is included
         type: 'bank',
-        status: 'Active', // Or 'Pending' if verification is needed
+        status: 'Active',
         ...data,
-        // Explicitly ensure these fields are part of the data object for PayoutAccount type
-        swiftCode: data.swiftCode, 
-        routingNumber: data.routingNumber,
-        bankName: data.bankName,
-        accountHolderName: data.accountHolderName,
       };
       
       await addDoc(collection(db, 'payoutAccounts'), {
         ...newAccountData,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(), // Also set updatedAt on creation
       });
 
       toast({
@@ -86,11 +82,11 @@ const AddBankAccountPage: NextPage = () => {
 
   return (
     <div className="space-y-6">
-      <Link href="/dashboard/payouts" legacyBehavior>
-        <a className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4">
+      <Link href="/dashboard/payouts">
+        <Button variant="link" className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4 px-0">
           <ArrowLeft className="h-4 w-4" />
           Back to Payout Accounts
-        </a>
+        </Button>
       </Link>
       <Card className="max-w-2xl mx-auto">
         <CardHeader>

@@ -23,7 +23,7 @@ interface StatCardData {
   title: string;
   value: string;
   change: string;
-  positiveChange?: boolean; // Made optional as N/A won't have a positive/negative state
+  positiveChange?: boolean;
 }
 
 const statData: StatCardData[] = [
@@ -33,28 +33,30 @@ const statData: StatCardData[] = [
 ];
 
 const monthlyRevenueChartData: { month: string, revenue: number }[] = [
+  // Dummy data for chart, uncomment to see
   // { month: 'Jan', revenue: 1500 }, { month: 'Feb', revenue: 1800 }, { month: 'Mar', revenue: 1300 },
   // { month: 'Apr', revenue: 2200 }, { month: 'May', revenue: 2000 }, { month: 'Jun', revenue: 2800 },
   // { month: 'Jul', revenue: 2500 },
 ];
 
 const quarterlySalesChartData: { name: string, sales: number }[] = [
+  // Dummy data for chart, uncomment to see
   // { name: 'Q1', sales: 8000 }, { name: 'Q2', sales: 12000 },
   // { name: 'Q3', sales: 9500 }, { name: 'Q4', sales: 15000 },
 ];
 
 interface TopProductData {
   name: string;
-  value: number;
+  value: number; 
 }
 const topSellingProductsData: TopProductData[] = [
+  // Dummy data for chart, uncomment to see
   // { name: 'Product A', value: 80 }, { name: 'Product B', value: 60 }, { name: 'Product C', value: 40 },
 ];
 
 const monthlyRevenueChartConfig = { revenue: { label: "Revenue", color: "hsl(var(--chart-1))" } } satisfies ChartConfig;
 const quarterlySalesChartConfig = { sales: { label: "Sales", color: "hsl(var(--chart-2))" } } satisfies ChartConfig;
 
-// Reusable component for "No Data" display within chart cards
 const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: () => void; className?: string }) => (
   <div className={cn("flex flex-col items-center justify-center text-center h-full gap-2 min-h-[180px]", className)}>
     <Info className="h-10 w-10 text-muted-foreground" />
@@ -66,7 +68,7 @@ const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: ()
       variant="secondary" 
       size="sm" 
       className="rounded-full px-3 h-8 text-xs"
-      onClick={onRefreshClick} // In a real app, wire this to a refresh function
+      onClick={onRefreshClick}
     >
       <RefreshCw className="mr-1.5 h-3 w-3" />
       Refresh
@@ -76,13 +78,14 @@ const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: ()
 
 
 const DashboardPage: NextPage = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, initialLoadComplete } = useAuth();
   const router = useRouter();
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
 
   useEffect(() => {
-    if (authLoading) return;
+    if (!initialLoadComplete) return;
+
     if (!user) {
       router.push('/login');
       return;
@@ -93,14 +96,14 @@ const DashboardPage: NextPage = () => {
     const q = query(
       transactionsCollection, 
       where('userId', '==', user.uid), 
-      orderBy('createdAt', 'desc'), 
+      orderBy('createdAt', 'desc'), // Order by server timestamp
       limit(5)
     );
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const fetchedTransactions: Transaction[] = [];
-      querySnapshot.forEach((doc) => {
-        fetchedTransactions.push({ id: doc.id, ...doc.data() } as Transaction);
+      querySnapshot.forEach((docSnap) => {
+        fetchedTransactions.push({ id: docSnap.id, ...docSnap.data() } as Transaction);
       });
       setRecentTransactions(fetchedTransactions);
       setLoadingTransactions(false);
@@ -110,9 +113,9 @@ const DashboardPage: NextPage = () => {
     });
 
     return () => unsubscribe();
-  }, [user, authLoading, router]);
+  }, [user, initialLoadComplete, router]);
 
-  if (authLoading || (!user && !authLoading)) {
+  if (authLoading || !initialLoadComplete || (!user && initialLoadComplete)) {
     return (
         <div className="flex justify-center items-center h-full p-8">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -120,10 +123,10 @@ const DashboardPage: NextPage = () => {
     );
   }
   
-  const formatDate = (dateValue: Timestamp | Date | string | undefined) => {
+  const formatDateDisplay = (dateValue: Timestamp | Date | string | undefined | null) => {
     if (!dateValue) return 'N/A';
     const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue);
-    return format(date, 'yyyy-MM-dd');
+    return format(date, 'yyyy-MM-dd'); // Consistent format
   };
 
   return (
@@ -174,7 +177,7 @@ const DashboardPage: NextPage = () => {
                 <TableBody>
                   {recentTransactions.map((transaction) => (
                     <TableRow key={transaction.id} className="h-[72px]">
-                      <TableCell className="px-4 py-2 text-sm text-muted-foreground">{formatDate(transaction.createdAt)}</TableCell>
+                      <TableCell className="px-4 py-2 text-sm text-muted-foreground">{formatDateDisplay(transaction.createdAt)}</TableCell>
                       <TableCell className="px-4 py-2 text-sm font-normal text-foreground">{transaction.customer}</TableCell>
                       <TableCell className="px-4 py-2 text-sm text-muted-foreground">{transaction.currency} {transaction.amount.toFixed(2)}</TableCell>
                       <TableCell className="px-4 py-2 text-sm">
@@ -251,7 +254,7 @@ const DashboardPage: NextPage = () => {
                     <p className="text-base text-muted-foreground font-medium">N/A</p>
                 </div>
             </CardHeader>
-            <CardContent className="p-6 pt-2 min-h-[210px]"> {/* Added min-h to ensure NoChartDataDisplay has space */}
+            <CardContent className="p-6 pt-2 min-h-[210px]">
                 {topSellingProductsData.length > 0 ? (
                     <div className="space-y-6">
                         {topSellingProductsData.map((product) => (
@@ -266,14 +269,12 @@ const DashboardPage: NextPage = () => {
                         ))}
                     </div>
                 ) : (
-                     <NoChartDataDisplay className="py-6"/> // Added some padding to make it look less cramped
+                     <NoChartDataDisplay className="py-6"/>
                 )}
             </CardContent>
           </Card>
         </div>
       </div>
-      
-      {/* The redundant "No Data Available" card at the bottom has been removed. */}
     </div>
   );
 };

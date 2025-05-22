@@ -69,14 +69,10 @@ const PaymentLinksTable: React.FC<{
     );
   }
 
-  const formatDate = (dateValue: string | Date | Timestamp) => {
-    if (dateValue instanceof Timestamp) {
-      return format(dateValue.toDate(), 'PP');
-    }
-    if (dateValue instanceof Date) {
-      return format(dateValue, 'PP');
-    }
-    return format(new Date(dateValue), 'PP');
+  const formatDateDisplay = (dateValue: Timestamp | Date | string | undefined | null) => {
+    if (!dateValue) return 'N/A';
+    const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue);
+    return format(date, 'PP'); // Example format: Oct 17, 2023
   };
 
 
@@ -115,7 +111,7 @@ const PaymentLinksTable: React.FC<{
                     </TableCell>
                     <TableCell className="px-4 py-2 text-sm text-muted-foreground">{link.currency} {link.amount.toFixed(2)}</TableCell>
                     <TableCell className="px-4 py-2 text-sm text-muted-foreground">
-                      {formatDate(link.creationDate)}
+                      {formatDateDisplay(link.creationDate)}
                     </TableCell>
                     <TableCell className="px-4 py-2 text-right">
                       <AlertDialog>
@@ -173,7 +169,7 @@ const PaymentLinksTable: React.FC<{
 
 
 const PaymentLinksPage: NextPage = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, initialLoadComplete } = useAuth();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [allLinks, setAllLinks] = useState<PaymentLink[]>([]);
@@ -181,7 +177,8 @@ const PaymentLinksPage: NextPage = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (authLoading) return;
+    if (!initialLoadComplete) return; 
+
     if (!user) {
       router.push('/login');
       return;
@@ -192,8 +189,8 @@ const PaymentLinksPage: NextPage = () => {
     
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const fetchedLinks: PaymentLink[] = [];
-      querySnapshot.forEach((doc) => {
-        fetchedLinks.push({ id: doc.id, ...doc.data() } as PaymentLink);
+      querySnapshot.forEach((docSnap) => {
+        fetchedLinks.push({ id: docSnap.id, ...docSnap.data() } as PaymentLink);
       });
       setAllLinks(fetchedLinks);
       setLoadingData(false);
@@ -204,11 +201,10 @@ const PaymentLinksPage: NextPage = () => {
     });
 
     return () => unsubscribe();
-  }, [user, authLoading, router, toast]);
+  }, [user, initialLoadComplete, router, toast]);
 
   const handleDelete = async (id: string, linkName: string) => {
     try {
-      // TODO: Also delete associated transactions in a batched write or cloud function
       await deleteDoc(doc(db, 'paymentLinks', id));
       toast({ 
           title: "Payment Link Deleted", 
@@ -231,8 +227,8 @@ const PaymentLinksPage: NextPage = () => {
   const filteredLinks = useMemo(() => {
     return allLinks.filter(link =>
       link.linkName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      link.reference.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      link.purpose.toLowerCase().includes(searchTerm.toLowerCase())
+      (link.reference && link.reference.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (link.purpose && link.purpose.toLowerCase().includes(searchTerm.toLowerCase()))
     );
   }, [searchTerm, allLinks]);
 
@@ -246,7 +242,7 @@ const PaymentLinksPage: NextPage = () => {
     [filteredLinks]
   );
   
-  if (authLoading || (!user && !authLoading)) {
+  if (authLoading || (!user && !initialLoadComplete)) {
      return (
         <div className="flex justify-center items-center h-full p-8">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -258,7 +254,7 @@ const PaymentLinksPage: NextPage = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Payment Links</h1>
-          <Link href="/dashboard/payment-links/create" legacyBehavior>
+          <Link href="/dashboard/payment-links/create">
             <Button>
               <PlusCircle className="mr-2 h-4 w-4" /> Create New Link
             </Button>
@@ -270,7 +266,7 @@ const PaymentLinksPage: NextPage = () => {
           <Input
             type="search"
             placeholder="Search payment links by name, reference, or purpose"
-            className="w-full bg-secondary border-border rounded-lg h-12 pl-10 pr-4 text-base focus-visible:ring-primary" // Updated border
+            className="w-full bg-secondary border-border rounded-lg h-12 pl-10 pr-4 text-base focus-visible:ring-primary"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />

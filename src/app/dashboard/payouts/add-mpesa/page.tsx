@@ -49,7 +49,7 @@ const AddMpesaAccountPage: NextPage = () => {
     }
     try {
       const newAccountData: Omit<PayoutAccount, 'id' | 'createdAt' | 'updatedAt' | 'bankName' | 'routingNumber' | 'swiftCode'> = {
-        userId: user.uid,
+        userId: user.uid, // Ensure userId is included
         type: 'mpesa',
         status: 'Active',
         ...data,
@@ -58,6 +58,7 @@ const AddMpesaAccountPage: NextPage = () => {
       await addDoc(collection(db, 'payoutAccounts'), {
         ...newAccountData,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(), // Also set updatedAt on creation
       });
       
       toast({
@@ -73,11 +74,11 @@ const AddMpesaAccountPage: NextPage = () => {
 
   return (
     <div className="space-y-6">
-       <Link href="/dashboard/payouts" legacyBehavior>
-        <a className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4">
+       <Link href="/dashboard/payouts">
+        <Button variant="link" className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4 px-0">
           <ArrowLeft className="h-4 w-4" />
           Back to Payout Accounts
-        </a>
+        </Button>
       </Link>
       <Card className="max-w-2xl mx-auto">
         <CardHeader>

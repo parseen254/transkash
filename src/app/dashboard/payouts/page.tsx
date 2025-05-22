@@ -10,7 +10,7 @@ import type { PayoutAccount } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/contexts/auth-context';
 import { useEffect, useState } from 'react';
-import { collection, query, where, getDocs, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -44,13 +44,14 @@ const PayoutAccountItem: React.FC<{ account: PayoutAccount; onEdit: (id: string,
 
 const PayoutAccountsPage: NextPage = () => {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, initialLoadComplete } = useAuth();
   const [bankAccounts, setBankAccounts] = useState<PayoutAccount[]>([]);
   const [mpesaAccounts, setMpesaAccounts] = useState<PayoutAccount[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
   useEffect(() => {
-    if (authLoading) return;
+    if (!initialLoadComplete) return; // Wait for initial auth load
+
     if (!user) {
       router.push('/login');
       return;
@@ -63,8 +64,8 @@ const PayoutAccountsPage: NextPage = () => {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const fetchedBankAccounts: PayoutAccount[] = [];
       const fetchedMpesaAccounts: PayoutAccount[] = [];
-      querySnapshot.forEach((doc) => {
-        const account = { id: doc.id, ...doc.data() } as PayoutAccount;
+      querySnapshot.forEach((docSnap) => {
+        const account = { id: docSnap.id, ...docSnap.data() } as PayoutAccount;
         if (account.type === 'bank') {
           fetchedBankAccounts.push(account);
         } else if (account.type === 'mpesa') {
@@ -77,11 +78,10 @@ const PayoutAccountsPage: NextPage = () => {
     }, (error) => {
       console.error("Error fetching payout accounts: ", error);
       setLoadingData(false);
-      // Optionally show a toast message for the error
     });
 
     return () => unsubscribe();
-  }, [user, authLoading, router]);
+  }, [user, initialLoadComplete, router]);
 
   const handleEdit = (id: string, type: 'bank' | 'mpesa') => {
     if (type === 'bank') {
@@ -108,15 +108,13 @@ const PayoutAccountsPage: NextPage = () => {
     </div>
   );
 
-
-  if (authLoading || (!user && !authLoading)) { // Show loading if auth is loading or user is null (before redirect)
+  if (authLoading || (!initialLoadComplete && !user)) { 
     return (
         <div className="flex justify-center items-center h-full p-8">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
         </div>
     );
   }
-
 
   return (
     <div className="space-y-8">
@@ -128,9 +126,9 @@ const PayoutAccountsPage: NextPage = () => {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-foreground">Bank accounts</h2>
           <div className="flex justify-end">
-             <Link href="/dashboard/payouts/add-bank" legacyBehavior>
+             <Link href="/dashboard/payouts/add-bank">
                 <Button>
-                <PlusCircle className="mr-2 h-4 w-4" /> Add bank account
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add bank account
                 </Button>
             </Link>
           </div>
@@ -156,9 +154,9 @@ const PayoutAccountsPage: NextPage = () => {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-foreground">M-Pesa accounts</h2>
           <div className="flex justify-end">
-            <Link href="/dashboard/payouts/add-mpesa" legacyBehavior>
+            <Link href="/dashboard/payouts/add-mpesa">
                 <Button>
-                <PlusCircle className="mr-2 h-4 w-4" /> Add M-Pesa account
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add M-Pesa account
                 </Button>
             </Link>
           </div>

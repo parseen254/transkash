@@ -11,9 +11,9 @@ export interface UserProfile {
   displayName?: string | null;
   personalPhone?: string;
   photoURL?: string | null;
-  createdAt?: Timestamp; // Firestore timestamp
-  updatedAt?: Timestamp; // Firestore timestamp
-  lastLoginAt?: Timestamp; // Firestore timestamp
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+  lastLoginAt?: Timestamp;
   provider?: string;
   themePreference?: ThemePreference;
   businessName?: string;
@@ -24,66 +24,66 @@ export interface UserProfile {
 }
 
 export interface PayoutAccount {
-  id: string; // Firestore document ID
+  id: string; 
   userId: string;
   type: 'bank' | 'mpesa';
-  accountName: string; // User-defined nickname
-  accountNumber: string; // Actual account number or M-Pesa phone number
-  accountHolderName: string; // Required for M-Pesa & Bank
-  bankName?: string; // Required for bank accounts
-  routingNumber?: string; // Required for bank accounts (can be optional based on region)
-  swiftCode?: string; // Required for bank accounts (can be optional based on region)
+  accountName: string; 
+  accountNumber: string; 
+  accountHolderName: string; 
+  bankName?: string; 
+  routingNumber?: string; 
+  swiftCode?: string; 
   status: 'Active' | 'Pending' | 'Disabled';
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
 
 export interface PaymentLink {
-  id: string; // Firestore document ID
+  id: string; 
   userId: string;
   linkName: string;
   reference: string;
-  amount: number; // Store as number (e.g., cents or actual value)
-  currency: string; // e.g., KES, USD
+  amount: number; // Store as number
+  currency: string; 
   purpose: string;
   creationDate: Timestamp;
-  expiryDate?: Timestamp | null; // Optional, use null if not set
+  expiryDate?: Timestamp | null; 
   status: 'Active' | 'Expired' | 'Disabled' | 'Paid';
-  payoutAccountId: string; // ID of the payout account
-  shortUrl: string; // The actual shareable link
+  payoutAccountId: string; 
+  shortUrl: string; 
   hasExpiry: boolean;
   updatedAt?: Timestamp;
 }
 
 export interface Transaction {
-  id: string; // Firestore document ID
+  id: string; 
   userId: string;
   paymentLinkId: string;
-  date: Timestamp; // Transaction date
-  customer: string; // Payer's name or identifier
-  amount: number; // Amount transacted
+  date: Timestamp; 
+  customer: string; 
+  amount: number; 
   currency: string;
   status: 'Completed' | 'Pending' | 'Failed';
-  reference: string; // Payment gateway transaction reference (e.g., Mpesa TXN ID, Card TXN ID)
-  method?: 'mpesa_stk' | 'mpesa_paybill' | 'card'; // Payment method used
+  reference: string; 
+  method?: 'mpesa_stk' | 'mpesa_paybill' | 'card';
   createdAt: Timestamp;
 }
 
-// For the payment flow pages that don't have auth context
-export interface PublicPaymentLinkDetails extends Omit<PaymentLink, 'userId' | 'payoutAccountId' | 'updatedAt' | 'creationDate' | 'expiryDate'> {
-  // Fields needed by the public payment page
-  creationDate: string | Date | Timestamp; // More flexible for dummy data vs Firestore
+
+export interface PublicPaymentLinkDetails extends Omit<PaymentLink, 'userId' | 'payoutAccountId' | 'updatedAt' | 'creationDate' | 'expiryDate' | 'amount' | 'status'> {
+  amount: string | number; // More flexible for display
+  status: string; // More flexible for display
+  creationDate: string | Date | Timestamp;
   expiryDate?: string | Date | Timestamp | null;
 }
 
 
-// Used in payment success/failure pages, derived from URL + link lookup
 export interface PaymentOutcomeDetails {
-  linkName?: string; // From PaymentLink
-  orderReference?: string; // From PaymentLink.reference
-  purpose?: string; // From PaymentLink.purpose
-  amountPaid?: string; // Formatted amount from URL
-  currency?: string; // From URL
-  paidOn?: string; // Formatted date of payment
-  failureReason?: string; // For failed payments
+  linkName?: string; 
+  orderReference?: string; 
+  purpose?: string; 
+  amountPaid?: string; 
+  currency?: string; 
+  paidOn?: string; 
+  failureReason?: string; 
 }

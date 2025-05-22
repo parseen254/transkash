@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import type { PayoutAccount, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, Timestamp, doc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, Timestamp, doc, setDoc } from 'firebase/firestore'; // Added setDoc
 import { useEffect, useState } from 'react';
 
 const paymentLinkSchema = z.object({
@@ -66,7 +66,7 @@ const CreatePaymentLinkPage: NextPage = () => {
       currency: 'KES',
       purpose: '',
       payoutAccountId: '',
-      hasExpiry: true,
+      hasExpiry: true, // Default expiry to true
       expiryDate: undefined,
     },
   });
@@ -77,15 +77,16 @@ const CreatePaymentLinkPage: NextPage = () => {
     if (!user) return;
     setLoadingAccounts(true);
     const q = query(collection(db, 'payoutAccounts'), where('userId', '==', user.uid), where('status', '==', 'Active'));
-    getDocs(q).then(snapshot => {
-      const accounts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PayoutAccount));
+    const unsubscribe = onSnapshot(q, snapshot => { // Use onSnapshot for real-time updates
+      const accounts = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as PayoutAccount));
       setPayoutAccounts(accounts);
       setLoadingAccounts(false);
-    }).catch(error => {
+    }, error => {
       console.error("Error fetching payout accounts:", error);
       toast({ title: "Error", description: "Could not fetch payout accounts.", variant: "destructive" });
       setLoadingAccounts(false);
     });
+    return () => unsubscribe(); // Cleanup listener
   }, [user, toast]);
 
   const onSubmit = async (data: PaymentLinkFormValues) => {
@@ -95,9 +96,9 @@ const CreatePaymentLinkPage: NextPage = () => {
     }
 
     try {
-      const newLinkRef = doc(collection(db, 'paymentLinks')); // Generate ID beforehand for shortUrl
+      const newLinkRef = doc(collection(db, 'paymentLinks')); 
       const newLinkData: Omit<PaymentLink, 'id'> = {
-        userId: user.uid,
+        userId: user.uid, // Ensure userId is included
         linkName: data.linkName,
         reference: data.reference,
         amount: data.amount,
@@ -107,11 +108,12 @@ const CreatePaymentLinkPage: NextPage = () => {
         hasExpiry: data.hasExpiry,
         expiryDate: data.hasExpiry && data.expiryDate ? Timestamp.fromDate(data.expiryDate) : null,
         status: 'Active',
-        creationDate: serverTimestamp() as Timestamp, // Cast for type consistency
-        shortUrl: `/payment/order?paymentLinkId=${newLinkRef.id}`, // Use generated ID
+        creationDate: serverTimestamp() as Timestamp, 
+        updatedAt: serverTimestamp() as Timestamp,
+        shortUrl: `/payment/order?paymentLinkId=${newLinkRef.id}`, 
       };
 
-      await setDoc(newLinkRef, newLinkData); // Use setDoc with the generated ref
+      await setDoc(newLinkRef, newLinkData); 
 
       toast({
         title: "Payment Link Created!",
@@ -126,11 +128,11 @@ const CreatePaymentLinkPage: NextPage = () => {
 
   return (
     <div className="space-y-6">
-      <Link href="/dashboard/payment-links" legacyBehavior>
-        <a className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4">
+      <Link href="/dashboard/payment-links">
+        <Button variant="link" className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4 px-0">
           <ArrowLeft className="h-4 w-4" />
           Back to Payment Links
-        </a>
+        </Button>
       </Link>
       <Card className="max-w-2xl mx-auto">
         <CardHeader>
@@ -154,7 +156,7 @@ const CreatePaymentLinkPage: NextPage = () => {
                         <SelectTrigger>{loadingAccounts ? "Loading accounts..." : <SelectValue placeholder="Select a payout account" />}</SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {payoutAccounts.map(acc => ( <SelectItem key={acc.id} value={acc.id}>{acc.accountName} ({acc.type === 'bank' ? acc.bankName : acc.accountNumber})</SelectItem> ))}
+                        {payoutAccounts.map(acc => ( <SelectItem key={acc.id} value={acc.id}>{acc.accountName} ({acc.type === 'bank' && acc.bankName ? acc.bankName : acc.accountNumber})</SelectItem> ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />

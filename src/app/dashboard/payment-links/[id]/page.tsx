@@ -19,26 +19,28 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, Timestamp, serverTimestamp } from 'firebase/firestore'; // Added serverTimestamp
 
 const ITEMS_PER_PAGE = 5;
 
 const PaymentLinkDetailsPage: NextPage = () => {
   const router = useRouter();
   const params = useParams();
-  const { id: paymentLinkId } = params;
+  const { id: paymentLinkIdString } = params;
+  const paymentLinkId = paymentLinkIdString as string;
   const { toast } = useToast();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, initialLoadComplete } = useAuth();
 
   const [paymentLink, setPaymentLink] = useState<PaymentLink | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
+  const [loadingLinkDetails, setLoadingLinkDetails] = useState(true);
+  const [loadingLinkTransactions, setLoadingLinkTransactions] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
 
-
   useEffect(() => {
-    if (authLoading) return;
+    if (!initialLoadComplete) return;
+
     if (!user) {
       router.push('/login');
       return;
@@ -48,8 +50,8 @@ const PaymentLinkDetailsPage: NextPage = () => {
         return;
     }
 
-    setLoadingData(true);
-    const linkDocRef = doc(db, 'paymentLinks', paymentLinkId as string);
+    setLoadingLinkDetails(true);
+    const linkDocRef = doc(db, 'paymentLinks', paymentLinkId);
     const unsubscribeLink = onSnapshot(linkDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const linkData = { id: docSnap.id, ...docSnap.data() } as PaymentLink;
@@ -63,33 +65,39 @@ const PaymentLinkDetailsPage: NextPage = () => {
         toast({ title: "Error", description: "Payment link not found.", variant: "destructive" });
         router.push('/dashboard/payment-links');
       }
-      // setLoadingData(false); // Move loading to after transactions
+      setLoadingLinkDetails(false);
     }, (error) => {
       console.error("Error fetching payment link:", error);
       toast({ title: "Error", description: "Could not load payment link.", variant: "destructive" });
-      setLoadingData(false);
+      setLoadingLinkDetails(false);
     });
 
+    setLoadingLinkTransactions(true);
     const transactionsCollection = collection(db, 'transactions');
-    const q = query(transactionsCollection, where('userId', '==', user.uid), where('paymentLinkId', '==', paymentLinkId as string), orderBy('date', 'desc'));
+    const q = query(
+        transactionsCollection, 
+        where('userId', '==', user.uid), 
+        where('paymentLinkId', '==', paymentLinkId), 
+        orderBy('date', 'desc')
+    );
     const unsubscribeTransactions = onSnapshot(q, (querySnapshot) => {
       const fetchedTransactions: Transaction[] = [];
-      querySnapshot.forEach((doc) => {
-        fetchedTransactions.push({ id: doc.id, ...doc.data() } as Transaction);
+      querySnapshot.forEach((docSnap) => {
+        fetchedTransactions.push({ id: docSnap.id, ...docSnap.data() } as Transaction);
       });
       setTransactions(fetchedTransactions);
-      setLoadingData(false); // Set loading to false after both fetches or listeners are set up
+      setLoadingLinkTransactions(false);
     }, (error) => {
       console.error("Error fetching transactions:", error);
       toast({ title: "Error", description: "Could not load transactions.", variant: "destructive" });
-      setLoadingData(false);
+      setLoadingLinkTransactions(false);
     });
 
     return () => {
       unsubscribeLink();
       unsubscribeTransactions();
     };
-  }, [paymentLinkId, user, authLoading, router, toast]);
+  }, [paymentLinkId, user, initialLoadComplete, router, toast]);
 
   const paginatedTransactions = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -126,8 +134,8 @@ const PaymentLinkDetailsPage: NextPage = () => {
   const handleDeleteLink = async () => {
     if (!paymentLink || !user) return;
     try {
-      // Consider deleting associated transactions in a batch or cloud function for full cleanup
       await deleteDoc(doc(db, 'paymentLinks', paymentLink.id));
+      // Note: Deleting associated transactions would typically be handled by a Cloud Function for atomicity and thoroughness.
       toast({ title: "Link Deleted", description: `Payment link ${paymentLink.linkName} deleted.`});
       router.push('/dashboard/payment-links');
     } catch (error) {
@@ -137,14 +145,15 @@ const PaymentLinkDetailsPage: NextPage = () => {
     setIsDeleteAlertOpen(false);
   };
 
-  const formatDate = (dateValue: string | Date | Timestamp | undefined | null, includeTime = false) => {
+  const formatDate = (dateValue: Timestamp | Date | string | undefined | null, includeTime = false) => {
     if (!dateValue) return 'N/A';
     const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue as any);
     return format(date, includeTime ? 'PPP p' : 'PPP');
   };
 
+  const isLoading = authLoading || !initialLoadComplete || loadingLinkDetails || loadingLinkTransactions;
 
-  if (authLoading || loadingData) {
+  if (isLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-48" />
@@ -163,7 +172,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
   }
 
   if (!paymentLink) {
-    return <div className="text-center py-10"><p className="text-muted-foreground">Payment link not found.</p><Button onClick={() => router.push('/dashboard/payment-links')} className="mt-4">Back</Button></div>;
+    return <div className="text-center py-10"><p className="text-muted-foreground">Payment link not found or you do not have access.</p><Button onClick={() => router.push('/dashboard/payment-links')} className="mt-4">Back to Payment Links</Button></div>;
   }
 
   const InfoItem = ({ icon: Icon, label, value, isLink }: { icon: React.ElementType, label: string, value?: string | React.ReactNode, isLink?: boolean }) => (
