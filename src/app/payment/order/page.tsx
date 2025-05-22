@@ -4,7 +4,7 @@
 import type { NextPage } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
-import { HelpCircle, Smartphone, CreditCard, AlertCircle } from 'lucide-react';
+import { HelpCircle, Smartphone, CreditCard, ListChecks, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLogo } from '@/components/shared/app-logo';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -32,9 +32,12 @@ interface PaymentOption {
 }
 
 const paymentOptions: PaymentOption[] = [
-  { value: 'mpesa', name: 'M-Pesa', description: 'Pay with M-Pesa', icon: Smartphone },
+  { value: 'mpesa_stk', name: 'M-Pesa (STK Push)', description: 'Pay with M-Pesa STK Push', icon: Smartphone },
+  { value: 'mpesa_paybill', name: 'M-Pesa (Paybill)', description: 'Pay using M-Pesa Paybill', icon: ListChecks },
   { value: 'card', name: 'Card Transfer', description: 'Pay with Card Transfer', icon: CreditCard },
 ];
+
+const MOCK_PAYBILL_NUMBER = "888888";
 
 const PaymentForOrderContent: React.FC = () => {
   const router = useRouter();
@@ -54,7 +57,6 @@ const PaymentForOrderContent: React.FC = () => {
     if (paymentLinkId) {
       setLoadingLink(true);
       setErrorLoadingLink(null);
-      // Simulate API call
       setTimeout(() => {
         const foundLink = dummyPaymentLinks.find(link => link.id === paymentLinkId);
         if (foundLink) {
@@ -80,93 +82,68 @@ const PaymentForOrderContent: React.FC = () => {
     }
   }, [searchParams]);
 
-
   const handlePayment = async () => {
-    if (!selectedPaymentMethod) {
-      toast({
-        title: "Selection Required",
-        description: "Please select a payment method.",
-        variant: "destructive",
-      });
+    if (!selectedPaymentMethod || !currentPaymentLink) {
+      toast({ title: "Error", description: "Payment details missing.", variant: "destructive" });
       return;
     }
-    if (!currentPaymentLink) {
-      toast({
-        title: "Error",
-        description: "Payment link details are missing.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (selectedPaymentMethod === 'mpesa' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?(7\d{8})$/)) {
-        toast({
-          title: "Invalid Phone Number",
-          description: "Please enter a valid M-Pesa phone number (e.g., 07XXXXXXXX or +2547XXXXXXXX).",
-          variant: "destructive",
-        });
-        return;
-    }
-
 
     setIsProcessing(true);
-    toast({
-      title: "Processing Payment",
-      description: "Please wait...",
-    });
-
-    await new Promise(resolve => setTimeout(resolve, 2000)); 
+    toast({ title: "Processing Payment", description: "Please wait..." });
+    await new Promise(resolve => setTimeout(resolve, 500)); // Small delay for UX
 
     let paymentSuccessful = false;
     const numericAmount = parseFloat(currentPaymentLink.amount);
 
-    if (selectedPaymentMethod === 'mpesa') {
+    if (selectedPaymentMethod === 'mpesa_stk') {
+      if (!mpesaPhoneNumber.match(/^(?:\+?254|0)?(7\d{8})$/)) {
+        toast({ title: "Invalid Phone Number", description: "Please enter a valid M-Pesa phone number.", variant: "destructive" });
+        setIsProcessing(false);
+        return;
+      }
       try {
         const response = await fetch('/api/mpesa/initiate-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phoneNumber: mpesaPhoneNumber, 
-            amount: numericAmount,
-            accountReference: currentPaymentLink.reference, // Using link reference as account reference for STK
-            transactionDesc: currentPaymentLink.purpose
-          }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneNumber: mpesaPhoneNumber, amount: numericAmount, accountReference: currentPaymentLink.reference, transactionDesc: currentPaymentLink.purpose }),
         });
         if (response.ok) {
           const result = await response.json();
-          if (result.ResponseCode === "0") {
-            paymentSuccessful = true;
-          } else {
-             toast({ title: "M-Pesa Error", description: result.CustomerMessage || result.errorMessage || "Failed to initiate M-Pesa payment.", variant: "destructive" });
-          }
+          paymentSuccessful = result.ResponseCode === "0";
+          if (!paymentSuccessful) toast({ title: "M-Pesa Error", description: result.CustomerMessage || result.errorMessage || "Failed to initiate M-Pesa STK push.", variant: "destructive" });
         } else {
-            const errorData = await response.json().catch(() => ({errorMessage: "Unknown M-Pesa API error"}));
-            toast({ title: "M-Pesa API Error", description: errorData.errorMessage || "Failed to connect to M-Pesa service.", variant: "destructive" });
+          const errorData = await response.json().catch(() => ({errorMessage: "Unknown M-Pesa API error"}));
+          toast({ title: "M-Pesa API Error", description: errorData.errorMessage || "Failed to connect to M-Pesa service.", variant: "destructive" });
         }
       } catch (error) {
         toast({ title: "M-Pesa Request Failed", description: "Could not reach M-Pesa service.", variant: "destructive" });
       }
+    } else if (selectedPaymentMethod === 'mpesa_paybill') {
+      try {
+        const response = await fetch('/api/mpesa/confirm-c2b', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentLinkId: currentPaymentLink.id, amount: numericAmount, currency: currentPaymentLink.currency || 'KES' }),
+        });
+        if (response.ok) {
+            const result = await response.json();
+            paymentSuccessful = result.ResultCode === "0";
+            if (!paymentSuccessful) toast({ title: "Paybill Confirmation Failed", description: result.ResultDesc || "Could not confirm payment.", variant: "destructive" });
+        } else {
+            const errorData = await response.json().catch(() => ({ResultDesc: "Unknown Paybill API error"}));
+            toast({ title: "Paybill API Error", description: errorData.ResultDesc || "Failed to connect to Paybill confirmation service.", variant: "destructive" });
+        }
+      } catch (error) {
+        toast({ title: "Paybill Request Failed", description: "Could not reach Paybill confirmation service.", variant: "destructive" });
+      }
     } else if (selectedPaymentMethod === 'card') {
        try {
         const response = await fetch('/api/card/authorize-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cardNumber: "************1234", // Mock data
-            expiryMonth: "12",
-            expiryYear: "2025",
-            cvv: "123",
-            amount: numericAmount,
-            currency: currentPaymentLink.currency || 'KES'
-          }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardNumber: "************1234", expiryMonth: "12", expiryYear: "2025", cvv: "123", amount: numericAmount, currency: currentPaymentLink.currency || 'KES' }),
         });
         if (response.ok) {
           const result = await response.json();
-          if (result.result === "SUCCESS") {
-             paymentSuccessful = true;
-          } else {
-             toast({ title: "Card Payment Failed", description: result.error?.explanation || "Card transaction declined.", variant: "destructive" });
-          }
+          paymentSuccessful = result.result === "SUCCESS";
+          if(!paymentSuccessful) toast({ title: "Card Payment Failed", description: result.error?.explanation || "Card transaction declined.", variant: "destructive" });
         } else {
            const errorData = await response.json().catch(() => ({error: {explanation: "Unknown card API error"}}));
            toast({ title: "Card API Error", description: errorData.error?.explanation || "Failed to connect to card service.", variant: "destructive" });
@@ -177,13 +154,8 @@ const PaymentForOrderContent: React.FC = () => {
     }
 
     setIsProcessing(false);
-
-    if (paymentSuccessful) {
-      router.push('/payment/successful');
-    } else {
-      // Optionally, redirect to failure page even if toast is shown, for consistency
-      // router.push('/payment/failed'); 
-    }
+    if (paymentSuccessful) router.push('/payment/successful');
+    // else router.push('/payment/failed'); // Optionally redirect to failure page
   };
   
   if (loadingLink) {
@@ -209,7 +181,7 @@ const PaymentForOrderContent: React.FC = () => {
   const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
 
   return (
-    <div className="w-full max-w-md space-y-8">
+    <div className="w-full max-w-md space-y-6">
       <h1 className="text-3xl font-semibold text-center text-foreground">
         {pageTitle}
       </h1>
@@ -238,21 +210,13 @@ const PaymentForOrderContent: React.FC = () => {
       </div>
 
       {!selectedPaymentMethod && (
-         <RadioGroup
-            value={selectedPaymentMethod}
-            onValueChange={setSelectedPaymentMethod}
-            className="space-y-3"
-            aria-label="Payment method"
-        >
+         <RadioGroup value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod} className="space-y-3" aria-label="Payment method">
             {paymentOptions.map((option) => (
-            <Label
-                key={option.value}
-                htmlFor={option.value}
+            <Label key={option.value} htmlFor={option.value}
                 className={`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors
-                ${selectedPaymentMethod === option.value ? 'border-primary ring-2 ring-primary bg-primary/5' : 'border-border hover:bg-secondary/50'}`}
-            >
+                ${selectedPaymentMethod === option.value ? 'border-primary ring-2 ring-primary bg-primary/5' : 'border-border hover:bg-secondary/50'}`}>
                 <RadioGroupItem value={option.value} id={option.value} className="shrink-0" />
-                <div className="flex-grow flex items-center space-x-2">
+                <div className="flex-grow flex items-center space-x-3">
                 <option.icon className={`h-6 w-6 ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-muted-foreground'}`} />
                 <div>
                     <p className={`font-medium ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-foreground'}`}>{option.name}</p>
@@ -264,53 +228,53 @@ const PaymentForOrderContent: React.FC = () => {
         </RadioGroup>
       )}
 
-
-      {selectedPaymentMethod === 'mpesa' && (
+      {selectedPaymentMethod === 'mpesa_stk' && (
         <div className="space-y-4">
-            <p className="text-base font-medium text-foreground">M-Pesa Details</p>
+            <p className="text-base font-medium text-foreground">M-Pesa STK Push Details</p>
             <div>
                 <Label htmlFor="mpesaPhoneNumber" className="text-sm font-medium text-muted-foreground">Phone Number</Label>
-                <Input
-                    id="mpesaPhoneNumber"
-                    type="tel"
-                    placeholder="Enter phone number"
-                    value={mpesaPhoneNumber}
+                <Input id="mpesaPhoneNumber" type="tel" placeholder="Enter phone number (e.g., 0712345678)" value={mpesaPhoneNumber}
                     onChange={(e) => setMpesaPhoneNumber(e.target.value)}
-                    className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
-                />
+                    className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
             </div>
+            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing || !mpesaPhoneNumber}>
+                {isProcessing ? <Spinner className="mr-2" /> : <Smartphone className="mr-2 h-5 w-5" />}
+                {isProcessing ? 'Processing...' : `Pay with M-Pesa (STK Push)`}
+            </Button>
+        </div>
+      )}
+
+      {selectedPaymentMethod === 'mpesa_paybill' && (
+        <div className="space-y-4">
+            <p className="text-base font-medium text-foreground">M-Pesa Paybill Instructions</p>
+            <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground bg-secondary/50 p-4 rounded-md">
+                <li>Go to your M-Pesa Menu</li>
+                <li>Select Lipa na M-Pesa, then Pay Bill</li>
+                <li>Enter Business Number: <strong className="text-foreground">{MOCK_PAYBILL_NUMBER}</strong></li>
+                <li>Enter Account Number: <strong className="text-foreground">{currentPaymentLink.reference}</strong></li>
+                <li>Enter Amount: <strong className="text-foreground">{currentPaymentLink.currency} {parseFloat(currentPaymentLink.amount).toFixed(2)}</strong></li>
+                <li>Enter your M-Pesa PIN and confirm</li>
+            </ul>
+            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing}>
+                {isProcessing ? <Spinner className="mr-2" /> : <ListChecks className="mr-2 h-5 w-5" />}
+                {isProcessing ? 'Confirming...' : "I've sent the money"}
+            </Button>
         </div>
       )}
 
       {selectedPaymentMethod === 'card' && (
         <div className="space-y-4 text-center">
-           {/* Placeholder for card form or info. For now, direct payment. */}
            <p className="text-muted-foreground">You've selected to pay by card.</p>
+            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing}>
+                {isProcessing ? <Spinner className="mr-2" /> : <CreditCard className="mr-2 h-5 w-5" />}
+                {isProcessing ? 'Processing...' : `Pay with Card`}
+            </Button>
         </div>
       )}
 
-
-      {selectedPaymentMethod && (
-        <Button 
-            onClick={handlePayment} 
-            className="w-full h-12 text-base rounded-lg" 
-            disabled={isProcessing || (selectedPaymentMethod === 'mpesa' && !mpesaPhoneNumber)}
-        >
-            {isProcessing ? <Spinner className="mr-2" /> : null}
-            {isProcessing ? 'Processing...' : 
-             selectedPaymentMethod === 'mpesa' ? `Pay with M-Pesa (${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)})` :
-             selectedPaymentMethod === 'card' ? `Pay with Card (${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)})` :
-            `Pay Now (${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)})`
-            }
-        </Button>
-      )}
        {selectedPaymentMethod && (
-         <Button 
-            variant="link" 
-            onClick={() => setSelectedPaymentMethod(undefined)} 
-            className="w-full text-muted-foreground hover:text-primary"
-            disabled={isProcessing}
-          >
+         <Button variant="link" onClick={() => setSelectedPaymentMethod(undefined)} 
+            className="w-full text-muted-foreground hover:text-primary" disabled={isProcessing}>
             Change payment method
         </Button>
        )}
@@ -328,7 +292,6 @@ const PaymentForOrderPage: NextPage = () => {
           <HelpCircle className="h-6 w-6" />
         </Button>
       </header>
-
       <main className="flex flex-col items-center justify-center flex-grow p-4 sm:p-8">
         <Suspense fallback={
             <div className="flex flex-col items-center justify-center flex-grow p-4 sm:p-8">
@@ -344,4 +307,3 @@ const PaymentForOrderPage: NextPage = () => {
 };
 
 export default PaymentForOrderPage;
-
