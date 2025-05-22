@@ -16,11 +16,14 @@ import type { PaymentLink } from '@/lib/types';
 import { format, parse, isFuture, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
 
-// Dummy Data for Payment Links (simulates fetching from a backend)
+// Dummy Data for Payment Links (simulates fetching from a backend based on paymentLinkId)
+// In a real app, this would be an API call.
 const dummyPaymentLinks: PaymentLink[] = [
   { id: 'pl_1', linkName: 'Invoice #1234 (The Coffee Shop)', reference: 'ORD1234567890', amount: '25.00', currency: 'KES', purpose: 'Coffee and Snacks', creationDate: new Date('2023-10-01').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 15)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_1', hasExpiry: true },
   { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: '1500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: new Date('2023-10-05').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 30)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_2', hasExpiry: true },
   { id: 'pl_3', linkName: 'Monthly Subscription', reference: 'SUB003', amount: '2000', currency: 'KES', purpose: 'SaaS Subscription', creationDate: new Date('2023-09-20').toISOString(), status: 'Active', payoutAccountId: 'acc_2', shortUrl: '/payment/order?paymentLinkId=pl_3', hasExpiry: false },
+  { id: 'pl_expired', linkName: 'Expired Offer', reference: 'EXP001', amount: '100', currency: 'KES', purpose: 'Past Offer', creationDate: new Date('2023-01-01').toISOString(), expiryDate: new Date('2023-01-15'), status: 'Expired', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_expired', hasExpiry: true },
+  { id: 'pl_disabled', linkName: 'Disabled Service', reference: 'DIS001', amount: '500', currency: 'KES', purpose: 'Service Temporarily Unavailable', creationDate: new Date('2023-01-01').toISOString(), status: 'Disabled', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_disabled', hasExpiry: false },
 ];
 
 
@@ -52,7 +55,6 @@ const PaymentForOrderContent: React.FC = () => {
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Card details state
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState(''); // MM/YY format
   const [cvv, setCvv] = useState('');
@@ -62,14 +64,15 @@ const PaymentForOrderContent: React.FC = () => {
     if (paymentLinkId) {
       setLoadingLink(true);
       setErrorLoadingLink(null);
+      // Simulate API call to fetch payment link details
       setTimeout(() => {
         const foundLink = dummyPaymentLinks.find(link => link.id === paymentLinkId);
         if (foundLink) {
-          if (foundLink.hasExpiry && foundLink.expiryDate && new Date(foundLink.expiryDate) < new Date()) {
-            setErrorLoadingLink(`Payment link "${foundLink.linkName}" has expired on ${format(new Date(foundLink.expiryDate), 'PPP')}.`);
+          if (foundLink.status !== 'Active') {
+            setErrorLoadingLink(`This payment link ("${foundLink.linkName}") is currently ${foundLink.status.toLowerCase()} and cannot be paid.`);
             setCurrentPaymentLink(null);
-          } else if (foundLink.status !== 'Active') {
-            setErrorLoadingLink(`Payment link "${foundLink.linkName}" is not currently active. Status: ${foundLink.status}.`);
+          } else if (foundLink.hasExpiry && foundLink.expiryDate && new Date(foundLink.expiryDate) < new Date()) {
+            setErrorLoadingLink(`Payment link "${foundLink.linkName}" expired on ${format(new Date(foundLink.expiryDate), 'PPP')}.`);
             setCurrentPaymentLink(null);
           } else {
             setCurrentPaymentLink(foundLink);
@@ -81,7 +84,7 @@ const PaymentForOrderContent: React.FC = () => {
         setLoadingLink(false);
       }, 700);
     } else {
-      setErrorLoadingLink("No payment link ID provided.");
+      setErrorLoadingLink("No payment link ID provided. Please use a valid payment link.");
       setCurrentPaymentLink(null);
       setLoadingLink(false);
     }
@@ -99,20 +102,20 @@ const PaymentForOrderContent: React.FC = () => {
 
   const handlePayment = async () => {
     if (!selectedPaymentMethod || !currentPaymentLink) {
-      toast({ title: "Error", description: "Payment details missing.", variant: "destructive" });
+      toast({ title: "Error", description: "Payment details or method missing.", variant: "destructive" });
       return;
     }
 
     setIsProcessing(true);
     toast({ title: "Processing Payment", description: "Please wait..." });
-    await new Promise(resolve => setTimeout(resolve, 500)); 
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
 
     let paymentSuccessful = false;
     const numericAmount = parseFloat(currentPaymentLink.amount);
 
     if (selectedPaymentMethod === 'mpesa_stk') {
       if (!mpesaPhoneNumber.match(/^(?:\+?254|0)?(7\d{8})$/)) {
-        toast({ title: "Invalid Phone Number", description: "Please enter a valid M-Pesa phone number.", variant: "destructive" });
+        toast({ title: "Invalid Phone Number", description: "Please enter a valid M-Pesa phone number (e.g., 07XXXXXXXX).", variant: "destructive" });
         setIsProcessing(false);
         return;
       }
@@ -141,7 +144,7 @@ const PaymentForOrderContent: React.FC = () => {
         if (response.ok) {
             const result = await response.json();
             paymentSuccessful = result.ResultCode === "0";
-            if (!paymentSuccessful) toast({ title: "Paybill Confirmation Failed", description: result.ResultDesc || "Could not confirm payment.", variant: "destructive" });
+            if (!paymentSuccessful) toast({ title: "Paybill Confirmation Failed", description: result.ResultDesc || "Could not confirm payment. Please ensure you made the payment correctly.", variant: "destructive" });
         } else {
             const errorData = await response.json().catch(() => ({ResultDesc: "Unknown Paybill API error"}));
             toast({ title: "Paybill API Error", description: errorData.ResultDesc || "Failed to connect to Paybill confirmation service.", variant: "destructive" });
@@ -157,12 +160,11 @@ const PaymentForOrderContent: React.FC = () => {
        }
 
        const [monthStr, yearStr] = cardExpiry.split('/');
-       const parsedMonth = monthStr; // MM
-       const parsedFullYear = `20${yearStr}`; // YYYY
+       const parsedMonth = monthStr; 
+       const parsedFullYear = `20${yearStr}`;
 
-       // Validate expiry date is in the future
-       const expiryDate = parse(`${parsedMonth}/01/${parsedFullYear}`, 'MM/dd/yyyy', new Date());
-       if (!isValid(expiryDate) || !isFuture(new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0))) { // Check end of expiry month
+       const expiryDateObject = parse(`${parsedMonth}/01/${parsedFullYear}`, 'MM/dd/yyyy', new Date());
+       if (!isValid(expiryDateObject) || !isFuture(new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() +1, 0 ))) { // Check end of expiry month
            toast({ title: "Invalid Expiry Date", description: "Card expiry date is in the past or invalid.", variant: "destructive" });
            setIsProcessing(false);
            return;
@@ -172,7 +174,7 @@ const PaymentForOrderContent: React.FC = () => {
         const response = await fetch('/api/card/authorize-payment', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            cardNumber, 
+            cardNumber: cardNumber.replace(/\s/g, ''), 
             expiryMonth: parsedMonth, 
             expiryYear: parsedFullYear, 
             cvv, 
@@ -194,16 +196,23 @@ const PaymentForOrderContent: React.FC = () => {
     }
 
     setIsProcessing(false);
-    if (paymentSuccessful) router.push('/payment/successful');
-    // else router.push('/payment/failed'); // Optionally redirect to failure page
+    if (paymentSuccessful) {
+        router.push('/payment/successful');
+    } else {
+        // Optionally, redirect to failure page or just show toast.
+        // router.push('/payment/failed'); 
+    }
   };
 
   const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
-    if (value.length > 4) value = value.slice(0, 4); // Max 4 digits (MMYY)
+    let value = e.target.value.replace(/\D/g, ''); 
+    if (value.length > 4) value = value.slice(0, 4); 
 
-    if (value.length >= 2) {
+    if (value.length > 2) {
       value = `${value.slice(0, 2)}/${value.slice(2)}`;
+    } else if (value.length === 2 && cardExpiry.length === 1 && !cardExpiry.includes('/')) {
+      // Add slash automatically if user types 2 digits for month
+      value = `${value}/`;
     }
     setCardExpiry(value);
   };
@@ -229,6 +238,10 @@ const PaymentForOrderContent: React.FC = () => {
   }
   
   const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
+  const payButtonText = selectedPaymentMethod === 'card' ? `Pay ${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)}` 
+                        : selectedPaymentMethod === 'mpesa_stk' ? "Pay with M-Pesa (STK Push)"
+                        : selectedPaymentMethod === 'mpesa_paybill' ? "I've sent the money"
+                        : "Proceed to Payment";
 
   return (
     <div className="w-full max-w-md space-y-6">
@@ -246,6 +259,12 @@ const PaymentForOrderContent: React.FC = () => {
           <span className="text-muted-foreground">Order #</span>
           <span className="font-medium text-foreground">{currentPaymentLink.reference}</span>
         </div>
+         {currentPaymentLink.purpose && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Purpose</span>
+            <span className="font-medium text-foreground text-right">{currentPaymentLink.purpose}</span>
+          </div>
+        )}
         <hr className="border-border my-2 !mt-3 !mb-3" />
         <div className="flex justify-between items-baseline">
           <span className="text-muted-foreground">Total</span>
@@ -254,7 +273,7 @@ const PaymentForOrderContent: React.FC = () => {
         {currentPaymentLink.hasExpiry && currentPaymentLink.expiryDate && (
           <div className="flex justify-between text-xs">
             <span className="text-muted-foreground">Due by</span>
-            <span className="font-medium text-muted-foreground">{format(new Date(currentPaymentLink.expiryDate), 'PPP')}</span>
+            <span className="font-medium text-muted-foreground">{format(new Date(currentPaymentLink.expiryDate), 'PPP p')}</span>
           </div>
         )}
       </div>
@@ -263,14 +282,14 @@ const PaymentForOrderContent: React.FC = () => {
          <RadioGroup value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod} className="space-y-3" aria-label="Payment method">
             {paymentOptions.map((option) => (
             <Label key={option.value} htmlFor={option.value}
-                className={`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors
-                ${selectedPaymentMethod === option.value ? 'border-primary ring-2 ring-primary bg-primary/5' : 'border-border hover:bg-secondary/50'}`}>
+                className={cn(`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors
+                ${selectedPaymentMethod === option.value ? 'border-primary ring-2 ring-primary bg-primary/5' : 'border-border hover:bg-secondary/50'}`)}>
                 <RadioGroupItem value={option.value} id={option.value} className="shrink-0" />
                 <div className="flex-grow flex items-center space-x-3">
-                <option.icon className={`h-6 w-6 ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-muted-foreground'}`} />
+                <option.icon className={cn(`h-6 w-6 ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-muted-foreground'}`)} />
                 <div>
-                    <p className={`font-medium ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-foreground'}`}>{option.name}</p>
-                    <p className={`text-xs ${selectedPaymentMethod === option.value ? 'text-primary/80' : 'text-muted-foreground'}`}>{option.description}</p>
+                    <p className={cn(`font-medium ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-foreground'}`)}>{option.name}</p>
+                    <p className={cn(`text-xs ${selectedPaymentMethod === option.value ? 'text-primary/80' : 'text-muted-foreground'}`)}>{option.description}</p>
                 </div>
                 </div>
             </Label>
@@ -289,7 +308,7 @@ const PaymentForOrderContent: React.FC = () => {
             </div>
             <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing || !mpesaPhoneNumber}>
                 {isProcessing ? <Spinner className="mr-2" /> : <Smartphone className="mr-2 h-5 w-5" />}
-                {isProcessing ? 'Processing...' : `Pay with M-Pesa (STK Push)`}
+                {isProcessing ? 'Processing...' : payButtonText}
             </Button>
         </div>
       )}
@@ -307,7 +326,7 @@ const PaymentForOrderContent: React.FC = () => {
             </ul>
             <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing}>
                 {isProcessing ? <Spinner className="mr-2" /> : <Receipt className="mr-2 h-5 w-5" />}
-                {isProcessing ? 'Confirming...' : "I've sent the money"}
+                {isProcessing ? 'Confirming...' : payButtonText}
             </Button>
         </div>
       )}
@@ -340,7 +359,7 @@ const PaymentForOrderContent: React.FC = () => {
            </div>
             <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing || !isCardFormValid()}>
                 {isProcessing ? <Spinner className="mr-2" /> : <CreditCard className="mr-2 h-5 w-5" />}
-                {isProcessing ? 'Processing...' : `Pay ${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)}`}
+                {isProcessing ? 'Processing...' : payButtonText}
             </Button>
         </div>
       )}
