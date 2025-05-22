@@ -1,25 +1,41 @@
+
 "use client";
 
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import * as z from 'zod';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, CalendarIcon } from 'lucide-react';
+import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Switch } from '@/components/ui/switch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 const paymentLinkSchema = z.object({
   linkName: z.string().min(1, { message: 'Link name is required.' }),
   reference: z.string().min(1, { message: 'Reference is required.' }),
-  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: 'Amount must be a valid number.' }),
+  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: 'Amount must be a valid number with up to two decimal places.' }),
   purpose: z.string().min(1, { message: 'Purpose is required.' }),
+  hasExpiry: z.boolean().default(false),
+  expiryDate: z.date().optional(),
+}).refine(data => {
+  if (data.hasExpiry && !data.expiryDate) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Expiry date is required when expiry is enabled.',
+  path: ['expiryDate'],
 });
 
 type PaymentLinkFormValues = z.infer<typeof paymentLinkSchema>;
@@ -35,18 +51,29 @@ const CreatePaymentLinkPage: NextPage = () => {
       reference: '',
       amount: '',
       purpose: '',
+      hasExpiry: false,
+      expiryDate: undefined,
     },
   });
 
+  const watchHasExpiry = form.watch('hasExpiry');
+
   const onSubmit = async (data: PaymentLinkFormValues) => {
     await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('Payment link data:', data);
-    const generatedLink = `https://switch.link/pay/${Math.random().toString(36).substring(7)}`; // Dummy link
+    
+    const submissionData = { ...data };
+    if (!submissionData.hasExpiry) {
+      delete submissionData.expiryDate; // Remove expiryDate if not enabled
+    }
+
+    console.log('Payment link data:', submissionData);
+    const generatedLink = `https://switch.link/pay/${Math.random().toString(36).substring(7)}`;
     toast({
       title: "Payment Link Generated!",
       description: (
         <div>
           <p>{data.linkName} created successfully.</p>
+          {submissionData.expiryDate && <p>Expires on: {format(submissionData.expiryDate, "PPP")}</p>}
           <p className="mt-2">Shareable Link: <a href={generatedLink} target="_blank" rel="noopener noreferrer" className="text-primary underline">{generatedLink}</a></p>
         </div>
       ),
@@ -105,7 +132,7 @@ const CreatePaymentLinkPage: NextPage = () => {
                     <FormItem>
                       <FormLabel>Amount (KES)</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="5000.00" {...field} />
+                        <Input type="number" step="0.01" placeholder="5000.00" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -125,6 +152,72 @@ const CreatePaymentLinkPage: NextPage = () => {
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="hasExpiry"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <div className="space-y-0.5">
+                      <FormLabel>Enable Expiry Date</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Set a date when this payment link will expire.
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {watchHasExpiry && (
+                <FormField
+                  control={form.control}
+                  name="expiryDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Expiry Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant={"outline"}
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date < new Date(new Date().setHours(0,0,0,0)) // Disable past dates
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
               <div className="flex justify-end">
                 <Button type="submit" disabled={form.formState.isSubmitting}>
                   {form.formState.isSubmitting ? 'Generating...' : 'Generate Link'}
