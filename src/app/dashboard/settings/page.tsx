@@ -137,7 +137,7 @@ const ProfileSettingsPage: NextPage = () => {
       toast({ title: "Error", description: "You are not logged in.", variant: "destructive" });
       return;
     }
-    setIsUploading(true); // Use this state for the spinner on the button
+    setIsUploading(true);
 
     try {
       let newPhotoURL = avatarPreview || user.photoURL; 
@@ -244,7 +244,7 @@ const ProfileSettingsPage: NextPage = () => {
     return (
       <div className="space-y-6">
         <div><Skeleton className="h-9 w-1/3 mb-1" /><Skeleton className="h-5 w-1/2" /></div>
-        <Skeleton className="h-10 w-full rounded-md" /> {/* Placeholder for TabsList */}
+        <Skeleton className="h-10 w-full rounded-md" /> 
         <Card><CardHeader><Skeleton className="h-7 w-1/4 mb-1" /><Skeleton className="h-4 w-2/5" /></CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center gap-4"><Skeleton className="h-20 w-20 rounded-full" /><Skeleton className="h-10 w-32" /></div>
@@ -295,7 +295,7 @@ const ProfileSettingsPage: NextPage = () => {
                   <div className="flex flex-col sm:flex-row items-center gap-6">
                     <div className="relative">
                       <Avatar className="h-24 w-24 text-3xl">
-                        <AvatarImage src={avatarPreview || undefined} alt={user?.displayName || 'User'} />
+                        <AvatarImage src={avatarPreview || undefined} alt={user?.displayName || 'User'} data-ai-hint="user avatar" />
                         <AvatarFallback>{user ? getInitials(user.displayName) : 'U'}</AvatarFallback>
                       </Avatar>
                       {isUploading && <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full"><Spinner className="text-white" /></div>}
