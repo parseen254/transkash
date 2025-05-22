@@ -3,7 +3,7 @@
 
 import type { NextPage } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { HelpCircle, Smartphone, CreditCard, Receipt, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLogo } from '@/components/shared/app-logo';
@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Spinner } from '@/components/ui/spinner';
 import type { PaymentLink } from '@/lib/types';
-import { format } from 'date-fns';
+import { format, parse, isFuture, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 // Dummy Data for Payment Links (simulates fetching from a backend)
@@ -54,8 +54,7 @@ const PaymentForOrderContent: React.FC = () => {
 
   // Card details state
   const [cardNumber, setCardNumber] = useState('');
-  const [expiryMonth, setExpiryMonth] = useState('');
-  const [expiryYear, setExpiryYear] = useState('');
+  const [cardExpiry, setCardExpiry] = useState(''); // MM/YY format
   const [cvv, setCvv] = useState('');
 
   useEffect(() => {
@@ -87,6 +86,16 @@ const PaymentForOrderContent: React.FC = () => {
       setLoadingLink(false);
     }
   }, [searchParams]);
+
+  const isCardFormValid = useCallback(() => {
+    const expiryPattern = /^(0[1-9]|1[0-2])\/\d{2}$/; // MM/YY
+    return (
+      cardNumber.replace(/\s/g, '').length >= 13 && // Basic card length check
+      expiryPattern.test(cardExpiry) &&
+      cvv.length >= 3 && cvv.length <= 4
+    );
+  }, [cardNumber, cardExpiry, cvv]);
+
 
   const handlePayment = async () => {
     if (!selectedPaymentMethod || !currentPaymentLink) {
@@ -141,18 +150,31 @@ const PaymentForOrderContent: React.FC = () => {
         toast({ title: "Paybill Request Failed", description: "Could not reach Paybill confirmation service.", variant: "destructive" });
       }
     } else if (selectedPaymentMethod === 'card') {
-       if (!cardNumber || !expiryMonth || !expiryYear || !cvv) {
-        toast({ title: "Missing Card Details", description: "Please fill in all card information.", variant: "destructive" });
+       if (!isCardFormValid()) {
+        toast({ title: "Invalid Card Details", description: "Please check your card information and try again.", variant: "destructive" });
         setIsProcessing(false);
         return;
        }
+
+       const [monthStr, yearStr] = cardExpiry.split('/');
+       const parsedMonth = monthStr; // MM
+       const parsedFullYear = `20${yearStr}`; // YYYY
+
+       // Validate expiry date is in the future
+       const expiryDate = parse(`${parsedMonth}/01/${parsedFullYear}`, 'MM/dd/yyyy', new Date());
+       if (!isValid(expiryDate) || !isFuture(new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0))) { // Check end of expiry month
+           toast({ title: "Invalid Expiry Date", description: "Card expiry date is in the past or invalid.", variant: "destructive" });
+           setIsProcessing(false);
+           return;
+       }
+
        try {
         const response = await fetch('/api/card/authorize-payment', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             cardNumber, 
-            expiryMonth, 
-            expiryYear, 
+            expiryMonth: parsedMonth, 
+            expiryYear: parsedFullYear, 
             cvv, 
             amount: numericAmount, 
             currency: currentPaymentLink.currency || 'KES' 
@@ -174,6 +196,16 @@ const PaymentForOrderContent: React.FC = () => {
     setIsProcessing(false);
     if (paymentSuccessful) router.push('/payment/successful');
     // else router.push('/payment/failed'); // Optionally redirect to failure page
+  };
+
+  const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+    if (value.length > 4) value = value.slice(0, 4); // Max 4 digits (MMYY)
+
+    if (value.length >= 2) {
+      value = `${value.slice(0, 2)}/${value.slice(2)}`;
+    }
+    setCardExpiry(value);
   };
   
   if (loadingLink) {
@@ -197,8 +229,6 @@ const PaymentForOrderContent: React.FC = () => {
   }
   
   const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
-
-  const isCardFormValid = cardNumber.trim() !== '' && expiryMonth.trim() !== '' && expiryYear.trim() !== '' && cvv.trim() !== '';
 
   return (
     <div className="w-full max-w-md space-y-6">
@@ -288,32 +318,29 @@ const PaymentForOrderContent: React.FC = () => {
            <div>
                 <Label htmlFor="cardNumber" className="text-sm font-medium text-muted-foreground">Card Number</Label>
                 <Input id="cardNumber" type="text" placeholder="0000 0000 0000 0000" value={cardNumber}
-                    onChange={(e) => setCardNumber(e.target.value)} maxLength={19}
+                    onChange={(e) => setCardNumber(e.target.value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim())} maxLength={19}
+                    autoComplete="cc-number"
                     className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
            </div>
-           <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-1">
-                    <Label htmlFor="expiryMonth" className="text-sm font-medium text-muted-foreground">Expiry MM</Label>
-                    <Input id="expiryMonth" type="text" placeholder="MM" value={expiryMonth}
-                        onChange={(e) => setExpiryMonth(e.target.value)} maxLength={2}
+           <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <Label htmlFor="cardExpiry" className="text-sm font-medium text-muted-foreground">Expiry Date (MM/YY)</Label>
+                    <Input id="cardExpiry" type="text" placeholder="MM/YY" value={cardExpiry}
+                        onChange={handleExpiryChange} maxLength={5}
+                        autoComplete="cc-exp"
                         className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
                 </div>
-                 <div className="col-span-1">
-                    <Label htmlFor="expiryYear" className="text-sm font-medium text-muted-foreground">Expiry YYYY</Label>
-                    <Input id="expiryYear" type="text" placeholder="YYYY" value={expiryYear}
-                        onChange={(e) => setExpiryYear(e.target.value)} maxLength={4}
-                        className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
-                </div>
-                <div className="col-span-1">
+                <div>
                     <Label htmlFor="cvv" className="text-sm font-medium text-muted-foreground">CVV</Label>
                     <Input id="cvv" type="text" placeholder="123" value={cvv}
-                        onChange={(e) => setCvv(e.target.value)} maxLength={4}
+                        onChange={(e) => setCvv(e.target.value.replace(/\D/g, ''))} maxLength={4}
+                        autoComplete="cc-csc"
                         className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
                 </div>
            </div>
-            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing || !isCardFormValid}>
+            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing || !isCardFormValid()}>
                 {isProcessing ? <Spinner className="mr-2" /> : <CreditCard className="mr-2 h-5 w-5" />}
-                {isProcessing ? 'Processing...' : `Pay with Card`}
+                {isProcessing ? 'Processing...' : `Pay ${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)}`}
             </Button>
         </div>
       )}
@@ -354,3 +381,4 @@ const PaymentForOrderPage: NextPage = () => {
 
 export default PaymentForOrderPage;
 
+    
