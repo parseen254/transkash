@@ -20,10 +20,10 @@ export function SiteFooter() {
               <h3 className="text-sm font-semibold text-foreground tracking-wider uppercase">Legal</h3>
               <ul className="mt-4 space-y-2">
                 <li>
-                  <Link href="/terms-conditions" legacyBehavior><a className="text-sm text-muted-foreground hover:text-primary">Terms & Conditions</a></Link>
+                  <Link href="/terms-conditions" legacyBehavior className="text-sm text-muted-foreground hover:text-primary">Terms & Conditions</Link>
                 </li>
                 <li>
-                  <Link href="/privacy-policy" legacyBehavior><a className="text-sm text-muted-foreground hover:text-primary">Privacy Policy</a></Link>
+                  <Link href="/privacy-policy" legacyBehavior className="text-sm text-muted-foreground hover:text-primary">Privacy Policy</Link>
                 </li>
               </ul>
             </div>
@@ -34,10 +34,10 @@ export function SiteFooter() {
                   <Link href="/how-it-works" legacyBehavior><a className="text-sm text-muted-foreground hover:text-primary">How It Works</a></Link>
                 </li>
                 <li>
-                  <Link href="/about-us" legacyBehavior><a className="text-sm text-muted-foreground hover:text-primary">About Us</a></Link>
+                  <Link href="/about-us" legacyBehavior className="text-sm text-muted-foreground hover:text-primary">About Us</Link>
                 </li>
                 <li>
-                  <Link href="/contact" legacyBehavior><a className="text-sm text-muted-foreground hover:text-primary">Contact Us</a></Link>
+                  <Link href="/contact" legacyBehavior className="text-sm text-muted-foreground hover:text-primary">Contact Us</Link>
                 </li>
               </ul>
             </div>
@@ -45,10 +45,10 @@ export function SiteFooter() {
               <h3 className="text-sm font-semibold text-foreground tracking-wider uppercase">Resources</h3>
               <ul className="mt-4 space-y-2">
                  <li>
-                  <Link href="/faq" legacyBehavior><a className="text-sm text-muted-foreground hover:text-primary">FAQ</a></Link>
+                  <Link href="/faq" legacyBehavior className="text-sm text-muted-foreground hover:text-primary">FAQ</Link>
                 </li>
                  <li>
-                  <Link href="/support" legacyBehavior><a className="text-sm text-muted-foreground hover:text-primary">Support</a></Link>
+                  <Link href="/support" legacyBehavior className="text-sm text-muted-foreground hover:text-primary">Support</Link>
                 </li>
               </ul>
             </div>
