@@ -1,11 +1,13 @@
+
 "use client";
 
 import type { NextPage } from 'next';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +22,6 @@ const forgotPasswordSchema = z.object({
 type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
 
 const ForgotPasswordPage: NextPage = () => {
-  const router = useRouter();
   const { toast } = useToast();
 
   const form = useForm<ForgotPasswordFormValues>({
@@ -31,14 +32,32 @@ const ForgotPasswordPage: NextPage = () => {
   });
 
   const onSubmit = async (data: ForgotPasswordFormValues) => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('Forgot password for email:', data.email);
-    toast({
-      title: "Password Reset Email Sent",
-      description: `If an account exists for ${data.email}, you will receive password reset instructions.`,
-    });
-    // Potentially redirect to a confirmation page or login
-    // router.push('/login');
+    try {
+      await sendPasswordResetEmail(auth, data.email);
+      toast({
+        title: "Password Reset Email Sent",
+        description: `If an account exists for ${data.email}, you will receive password reset instructions. Please check your inbox (and spam folder).`,
+        duration: 9000,
+      });
+      form.reset();
+    } catch (error: any) {
+      console.error('Forgot password error:', error);
+      let errorMessage = "An error occurred. Please try again.";
+      if (error.code === 'auth/user-not-found') {
+        // Still show generic message for security, but log specific error
+         toast({
+            title: "Password Reset Email Sent",
+            description: `If an account exists for ${data.email}, you will receive password reset instructions. Please check your inbox (and spam folder).`,
+            duration: 9000,
+        });
+        return;
+      }
+      toast({
+        title: "Error Sending Reset Email",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
   };
 
   return (

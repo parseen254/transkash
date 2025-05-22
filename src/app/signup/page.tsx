@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { NextPage } from 'next';
@@ -6,6 +7,9 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +25,7 @@ const signUpSchema = z.object({
   confirmPassword: z.string(),
 }).refine(data => data.password === data.confirmPassword, {
   message: "Passwords don't match.",
-  path: ['confirmPassword'], // path of error
+  path: ['confirmPassword'],
 });
 
 type SignUpFormValues = z.infer<typeof signUpSchema>;
@@ -42,14 +46,50 @@ const SignUpPage: NextPage = () => {
   });
 
   const onSubmit = async (data: SignUpFormValues) => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('Sign up data:', data);
-    toast({
-      title: "Account Created!",
-      description: "Please verify your email.",
-    });
-    router.push('/otp-verification?reason=signup');
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      const user = userCredential.user;
+
+      // Update Firebase Auth profile
+      await updateProfile(user, {
+        displayName: `${data.firstName} ${data.lastName}`,
+      });
+
+      // Send email verification
+      await sendEmailVerification(user);
+
+      // Create user document in Firestore
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(userRef, {
+        uid: user.uid,
+        email: user.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        displayName: `${data.firstName} ${data.lastName}`,
+        createdAt: serverTimestamp(),
+        provider: 'password', // To distinguish from Google, etc.
+      });
+      
+      toast({
+        title: "Account Created!",
+        description: "A verification email has been sent. Please check your inbox (and spam folder) to verify your account before logging in.",
+        duration: 9000,
+      });
+      router.push('/login');
+    } catch (error: any) {
+      console.error('Sign up error:', error);
+      let errorMessage = "An error occurred during sign up. Please try again.";
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "This email address is already in use. Please try a different email or log in.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "The password is too weak. Please choose a stronger password.";
+      }
+      toast({
+        title: "Sign Up Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
