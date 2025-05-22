@@ -30,38 +30,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (firebaseUser) {
         setUser(firebaseUser);
         const userRef = doc(db, "users", firebaseUser.uid);
-        const userSnap = await getDoc(userRef);
         
-        if (!userSnap.exists() && firebaseUser.providerData.some(p => p.providerId === 'google.com')) {
-          // Create profile if Google sign-in and no doc exists
-           const newUserProfile: UserProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            photoURL: firebaseUser.photoURL,
-            firstName: firebaseUser.displayName?.split(' ')[0] || '',
-            lastName: firebaseUser.displayName?.split(' ').slice(1).join(' ') || '',
-            createdAt: serverTimestamp(),
-            lastLoginAt: serverTimestamp(),
-            provider: 'google.com',
-            themePreference: 'system', // Default theme preference
-          };
-          try {
+        try {
+          const userSnap = await getDoc(userRef);
+          if (!userSnap.exists()) {
+            // User exists in Auth, but no Firestore doc. Create it.
+            // Typically for first Google Sign-In or if signup process was interrupted.
+            const displayName = firebaseUser.displayName || "";
+            const email = firebaseUser.email;
+            const photoURL = firebaseUser.photoURL;
+            const providerId = firebaseUser.providerData.length > 0 ? firebaseUser.providerData[0].providerId : 'unknown';
+
+            const newUserProfile: UserProfile = {
+              uid: firebaseUser.uid,
+              email: email,
+              displayName: displayName,
+              firstName: displayName.split(' ')[0] || '',
+              lastName: displayName.split(' ').slice(1).join(' ') || '',
+              photoURL: photoURL,
+              createdAt: serverTimestamp(),
+              lastLoginAt: serverTimestamp(),
+              provider: providerId,
+              themePreference: 'system', // Default theme on CREATION
+            };
             await setDoc(userRef, newUserProfile);
-          } catch (error) {
-            console.error("Error creating user document for Google user on auth state change:", error);
+            console.log("AuthProvider: Created new user document with default theme 'system' for UID:", firebaseUser.uid);
+          } else {
+            // User document exists. Only update lastLoginAt.
+            // ThemeProvider will handle theme sync for existing users.
+            await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
           }
-        } else if (userSnap.exists()) {
-           try {
-            // Update last login and ensure themePreference exists
-            const updateData: Partial<UserProfile> = { lastLoginAt: serverTimestamp() };
-            if (!userSnap.data()?.themePreference) {
-              updateData.themePreference = 'system';
-            }
-            await setDoc(userRef, updateData, { merge: true });
-          } catch (error) {
-            console.error("Error updating user document on auth state change:", error);
-          }
+        } catch (error) {
+          console.error("AuthProvider: Error handling user document:", error);
         }
       } else {
         setUser(null);

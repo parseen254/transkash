@@ -29,7 +29,6 @@ const profileSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
   phone: z.string().optional(),
   businessName: z.string().optional(),
-  // themePreference is handled by useTheme, not directly in this form schema
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -38,7 +37,7 @@ const ProfileSettingsPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
-  const { theme, setTheme, resolvedTheme } = useTheme(); // theme is ThemePreference
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [isFetchingData, setIsFetchingData] = useState(true);
   
   const form = useForm<ProfileFormValues>({
@@ -59,7 +58,7 @@ const ProfileSettingsPage: NextPage = () => {
         const userDocRef = doc(db, "users", user.uid);
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
-          const userData = userDocSnap.data() as UserProfile; // Cast to UserProfile
+          const userData = userDocSnap.data() as UserProfile;
           form.reset({
             firstName: userData.firstName || user.displayName?.split(' ')[0] || '',
             lastName: userData.lastName || user.displayName?.split(' ').slice(1).join(' ') || '',
@@ -67,12 +66,8 @@ const ProfileSettingsPage: NextPage = () => {
             phone: userData.phone || '',
             businessName: userData.businessName || '',
           });
-          // Theme is handled by ThemeProvider, but we ensure it's set if not present
-          if (userData.themePreference && userData.themePreference !== theme) {
-            setTheme(userData.themePreference);
-          }
+          // Theme is now fully managed by ThemeProvider, no need to set it here.
         } else {
-          // User exists in Auth but not Firestore (should be rare after signup/auth context fixes)
           form.reset({
             firstName: user.displayName?.split(' ')[0] || '',
             lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
@@ -85,9 +80,12 @@ const ProfileSettingsPage: NextPage = () => {
       };
       fetchUserData();
     } else if (!authLoading) {
-      setIsFetchingData(false);
+      setIsFetchingData(false); // Also set to false if no user and auth isn't loading
     }
-  }, [user, authLoading, form, router, theme, setTheme]);
+  // Removed theme and setTheme from deps as ThemeProvider handles theme sync.
+  // form is stable from useForm. router is stable.
+  }, [user, authLoading, form, router]);
+
 
   const onSubmit = async (data: ProfileFormValues) => {
     if (!user) {
@@ -100,11 +98,11 @@ const ProfileSettingsPage: NextPage = () => {
       const profileDataToSave: Partial<UserProfile> = {
         firstName: data.firstName,
         lastName: data.lastName,
-        email: data.email, // Email will be updated in Auth too
+        email: data.email,
         phone: data.phone || '',
         businessName: data.businessName || '',
         updatedAt: serverTimestamp(),
-        // themePreference is saved by setTheme from useTheme hook
+        // themePreference is saved by setTheme (from useTheme hook via RadioGroup)
       };
 
       await setDoc(userDocRef, profileDataToSave, { merge: true });
@@ -132,7 +130,6 @@ const ProfileSettingsPage: NextPage = () => {
                 variant: "destructive",
                 duration: 9000,
               });
-              // Revert email in form if auth update fails
               form.setValue('email', currentAuthUser.email || '');
           }
         }
@@ -307,8 +304,8 @@ const ProfileSettingsPage: NextPage = () => {
         </CardHeader>
         <CardContent>
           <RadioGroup
-            value={theme} // Directly use theme from useTheme()
-            onValueChange={(value) => setTheme(value as ThemePreference)} // setTheme now handles Firestore
+            value={theme} 
+            onValueChange={(value) => setTheme(value as ThemePreference)}
             className="space-y-2"
           >
             <Label htmlFor="theme-light" className="flex items-center space-x-2 cursor-pointer">

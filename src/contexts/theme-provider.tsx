@@ -16,9 +16,9 @@ interface ThemeProviderProps {
 }
 
 interface ThemeProviderState {
-  theme: ThemePreference;
+  theme: ThemePreference; // This is the "desired" theme (light, dark, system)
   setTheme: (theme: ThemePreference) => void;
-  resolvedTheme?: "dark" | "light";
+  resolvedTheme?: "dark" | "light"; // This is the actual theme applied (light or dark)
 }
 
 const initialState: ThemeProviderState = {
@@ -35,29 +35,37 @@ export function ThemeProvider({
   ...props
 }: ThemeProviderProps) {
   const { user } = useAuth();
-  const [theme, _setTheme] = useState<ThemePreference>(() => {
+
+  // _theme is the internal React state for the desired theme (light, dark, or system)
+  const [_theme, _setInternalTheme] = useState<ThemePreference>(() => {
     if (typeof window === 'undefined') {
       return defaultTheme;
     }
     return (localStorage.getItem(storageKey) as ThemePreference) || defaultTheme;
   });
+
   const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>(() => {
-     if (typeof window === 'undefined') return 'light'; // Default for SSR
-     if (theme === 'system') {
+     if (typeof window === 'undefined') return 'light'; 
+     if (_theme === 'system') {
         return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
      }
-     return theme;
+     return _theme;
   });
 
-  // Internal theme setter to avoid Firestore write-back loops from snapshot
-  const setThemeFromSource = useCallback((newTheme: ThemePreference, updateLocalStorage: boolean = true) => {
-    _setTheme(newTheme);
-    if (updateLocalStorage && typeof window !== 'undefined') {
-      localStorage.setItem(storageKey, newTheme);
-    }
+  // Updates local React state and localStorage. Called by Firestore sync or publicSetTheme.
+  const setThemeFromSource = useCallback((newTheme: ThemePreference) => {
+    _setInternalTheme(currentInternalTheme => {
+      if (currentInternalTheme !== newTheme) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(storageKey, newTheme);
+        }
+        return newTheme;
+      }
+      return currentInternalTheme; // No change needed
+    });
   }, [storageKey]);
 
-  // Effect for Firestore synchronization
+  // Firestore synchronization effect
   useEffect(() => {
     let unsubscribe: Unsubscribe | undefined;
     if (user && db) {
@@ -65,29 +73,37 @@ export function ThemeProvider({
       unsubscribe = onSnapshot(userDocRef, (docSnap) => {
         if (docSnap.exists()) {
           const userData = docSnap.data() as UserProfile;
-          if (userData.themePreference && userData.themePreference !== theme) {
-            // Update local theme if Firestore has a different one
+          if (userData.themePreference) {
+            // Firestore has a preference. This is the source of truth for syncing.
+            // Update local state (_setInternalTheme) and localStorage if they differ.
             setThemeFromSource(userData.themePreference);
-          } else if (!userData.themePreference) {
-            // If no theme preference in Firestore, set the current theme (or default) there.
-            // This handles initial setup for users who didn't have a preference saved.
-            setDoc(userDocRef, { themePreference: theme }, { merge: true })
-              .catch(error => console.error("Error setting default theme in Firestore:", error));
+          } else {
+            // No themePreference field in Firestore.
+            // This means AuthProvider/SignupPage should have set one.
+            // If it's truly missing (e.g. old user, migration), write the current
+            // local theme (from _theme, which was initialized from localStorage/default) to Firestore.
+            console.warn(`ThemeProvider: themePreference missing for user ${user.uid}. Writing local/default theme '${_theme}' to Firestore.`);
+            setDoc(userDocRef, { themePreference: _theme }, { merge: true })
+              .catch(error => console.error("ThemeProvider: Error writing initial local theme to Firestore:", error));
           }
+        } else {
+          // Document doesn't exist yet. AuthProvider handles its creation, including default theme.
+          // The onSnapshot listener will pick up the newly created document in a subsequent event.
+          console.log(`ThemeProvider: User document for ${user.uid} does not exist yet. AuthProvider should create it.`);
         }
       }, (error) => {
-        console.error("Error listening to theme preference:", error);
+        console.error("ThemeProvider: Firestore snapshot error:", error);
       });
     }
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      if (unsubscribe) unsubscribe();
     };
-  }, [user, theme, setThemeFromSource]);
+    // This effect primarily reacts to `user` to set up/tear down the listener.
+    // `setThemeFromSource` is memoized. `_theme` is included because it's used in the "write if missing" logic.
+  }, [user, db, setThemeFromSource, _theme]);
 
 
-  // Effect to apply theme to DOM and determine resolved theme
+  // Effect to apply theme to DOM and determine resolved theme based on _theme
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -95,13 +111,15 @@ export function ThemeProvider({
     const currentIsDark = root.classList.contains("dark");
     let newThemeToApply: 'dark' | 'light';
 
-    if (theme === "system") {
+    if (_theme === "system") {
       newThemeToApply = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     } else {
-      newThemeToApply = theme;
+      newThemeToApply = _theme;
     }
     
-    setResolvedTheme(newThemeToApply);
+    if (resolvedTheme !== newThemeToApply) {
+      setResolvedTheme(newThemeToApply);
+    }
 
     if (newThemeToApply === 'dark' && !currentIsDark) {
         root.classList.add("dark");
@@ -109,16 +127,17 @@ export function ThemeProvider({
         root.classList.remove("dark");
     }
     
-  }, [theme]);
+  }, [_theme, resolvedTheme]); // Re-run if desired theme (_theme) changes
 
-  // Listener for system theme changes (only if current theme is "system")
+  // Listener for system theme changes (only if current desired theme is "system")
   useEffect(() => {
-    if (typeof window === 'undefined' || theme !== 'system') return;
+    if (typeof window === 'undefined' || _theme !== 'system') return;
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = () => {
         const systemIsDark = mediaQuery.matches;
-        setResolvedTheme(systemIsDark ? "dark" : "light");
+        const newResolved = systemIsDark ? "dark" : "light";
+        setResolvedTheme(newResolved); // Update resolved theme
         const root = window.document.documentElement;
         if (systemIsDark) {
             root.classList.add("dark");
@@ -129,27 +148,27 @@ export function ThemeProvider({
 
     mediaQuery.addEventListener("change", handleChange);
     return () => mediaQuery.removeEventListener("change", handleChange);
-  }, [theme]);
+  }, [_theme]); // Re-run if desired theme (_theme) changes (e.g., from "dark" to "system")
 
-  // Public setTheme function that also updates Firestore
+  // Public setTheme function that updates local state, localStorage, AND Firestore
   const publicSetTheme = useCallback(async (newTheme: ThemePreference) => {
-    setThemeFromSource(newTheme); // Update local state and localStorage immediately
+    setThemeFromSource(newTheme); // Update local React state (_setInternalTheme) and localStorage
 
     if (user && db) {
       try {
         const userDocRef = doc(db, "users", user.uid);
         await setDoc(userDocRef, { themePreference: newTheme }, { merge: true });
+        console.log(`ThemeProvider: Updated Firestore themePreference to '${newTheme}' for user ${user.uid}`);
       } catch (error) {
-        console.error("Error updating theme preference in Firestore:", error);
-        // Optionally, revert local state or show error to user
+        console.error("ThemeProvider: Error updating theme preference in Firestore:", error);
       }
     }
-  }, [user, setThemeFromSource]);
+  }, [user, db, setThemeFromSource]);
 
 
   const value = {
-    theme,
-    resolvedTheme,
+    theme: _theme, // Expose the "desired" theme
+    resolvedTheme, // Expose the "actual applied" theme
     setTheme: publicSetTheme,
   };
 
