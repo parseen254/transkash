@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { signInWithEmailAndPassword, signInWithRedirect, sendEmailVerification, getRedirectResult } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithRedirect, sendEmailVerification, getRedirectResult, type User as FirebaseUser } from 'firebase/auth';
 import { auth, googleAuthProvider, db } from '@/lib/firebase';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { HelpCircle } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { AppLogo } from '@/components/shared/app-logo';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { UserProfile } from '@/lib/types';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
@@ -26,7 +27,6 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-// Google G logo SVG
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M17.6402 9.18199C17.6402 8.56379 17.582 7.96379 17.4748 7.38199H9V10.811H13.8438C13.6366 11.9702 13.001 12.923 12.0476 13.5612V15.819H14.9562C16.6582 14.2528 17.6402 11.9456 17.6402 9.18199Z" fill="#4285F4"/>
@@ -51,6 +51,51 @@ const LoginPage: NextPage = () => {
     },
   });
 
+  const handleSuccessfulLogin = async (user: FirebaseUser, provider: 'google.com' | 'password') => {
+    const userRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userRef);
+
+    let userProfileData: UserProfile | null = null;
+    if (userSnap.exists()) {
+      userProfileData = userSnap.data() as UserProfile;
+      await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
+    } else if (provider === 'google.com') { // Create profile if Google sign-in and no doc
+      const newUserProfile: UserProfile = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        firstName: user.displayName?.split(' ')[0] || '',
+        lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+        provider: 'google.com',
+        is2FAEnabled: false, // Default 2FA to false
+      };
+      await setDoc(userRef, newUserProfile);
+      userProfileData = newUserProfile;
+    }
+    
+    // For email/password, profile is created on signup.
+    // For Google, profile is created here if it doesn't exist.
+
+    if (userProfileData?.is2FAEnabled && provider === 'password') {
+      console.log("Backend Action Needed: Generate and send OTP to", user.email);
+      toast({
+        title: "2FA Required",
+        description: "Please check your email for an OTP.",
+      });
+      router.push(`/verify-otp?email=${encodeURIComponent(user.email || '')}`);
+    } else {
+      toast({
+        title: "Login Successful",
+        description: "Redirecting to dashboard...",
+      });
+      router.push('/dashboard');
+    }
+  };
+
+
   useEffect(() => {
     const processRedirect = async () => {
       setIsProcessingRedirect(true);
@@ -62,30 +107,7 @@ const LoginPage: NextPage = () => {
             title: "Google Sign-In Successful",
             description: "Processing your details...",
           });
-
-          const userRef = doc(db, "users", user.uid);
-          const userSnap = await getDoc(userRef);
-
-          if (!userSnap.exists()) {
-            await setDoc(userRef, {
-              uid: user.uid,
-              email: user.email,
-              displayName: user.displayName,
-              photoURL: user.photoURL,
-              firstName: user.displayName?.split(' ')[0] || '',
-              lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
-              createdAt: serverTimestamp(),
-              lastLoginAt: serverTimestamp(),
-              provider: 'google.com',
-            });
-          } else {
-            await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
-          }
-          toast({
-            title: "Login Successful",
-            description: "Redirecting to dashboard...",
-          });
-          router.push('/dashboard'); // Updated redirect
+          await handleSuccessfulLogin(user, 'google.com');
         }
       } catch (error: any) {
         console.error('Google Sign-In redirect error:', error);
@@ -105,7 +127,7 @@ const LoginPage: NextPage = () => {
       }
     };
     processRedirect();
-  }, [router, toast]);
+  }, [router, toast]); // handleSuccessfulLogin removed from deps as it causes re-runs
 
   const onSubmit = async (data: LoginFormValues) => {
     setIsSubmittingManual(true);
@@ -114,8 +136,9 @@ const LoginPage: NextPage = () => {
       const user = userCredential.user;
 
       if (user && !user.emailVerified) {
-        await auth.signOut();
-        await sendEmailVerification(user);
+        await auth.signOut(); // Sign out user if email not verified
+        // It's okay to send verification email again if they try to log in.
+        await sendEmailVerification(user); 
         toast({
           title: "Email Not Verified",
           description: "Your email address is not verified. We've sent a new verification link to your email. Please check your inbox (and spam folder).",
@@ -123,17 +146,12 @@ const LoginPage: NextPage = () => {
           duration: 9000,
         });
         form.reset();
+        setIsSubmittingManual(false);
         return;
       }
       
-      const userRef = doc(db, "users", user.uid);
-      await setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true });
+      await handleSuccessfulLogin(user, 'password');
 
-      toast({
-        title: "Login Successful",
-        description: "Redirecting to dashboard...",
-      });
-      router.push('/dashboard'); // Updated redirect
     } catch (error: any) {
       console.error('Login error:', error);
       const errorMessage = error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password'
@@ -145,7 +163,15 @@ const LoginPage: NextPage = () => {
         variant: "destructive",
       });
     } finally {
-      setIsSubmittingManual(false);
+      // Only set to false if not redirecting for 2FA
+      // This state is mainly for the button's loading indicator. 
+      // If redirected, the component unmounts.
+      // If an error occurs, we need to re-enable the button.
+      // Let's assume handleSuccessfulLogin will navigate away or an error will occur.
+      // So, if it's not a 2FA redirect, this makes sense.
+      // The router.push in handleSuccessfulLogin will unmount the page.
+      // So, this finally block might only hit on errors or email not verified.
+      setIsSubmittingManual(false); 
     }
   };
 
@@ -153,6 +179,7 @@ const LoginPage: NextPage = () => {
     setIsSubmittingManual(true); 
     try {
       await signInWithRedirect(auth, googleAuthProvider);
+      // Redirect will occur, so no need to set isSubmittingManual to false here.
     } catch (error: any) {
         console.error('Google Sign-In initiation error:', error);
         toast({
@@ -160,7 +187,7 @@ const LoginPage: NextPage = () => {
           description: error.message || "Could not initiate Google Sign-In. Please try again.",
           variant: "destructive",
         });
-        setIsSubmittingManual(false);
+        setIsSubmittingManual(false); // Error occurred, re-enable button
     }
   };
   

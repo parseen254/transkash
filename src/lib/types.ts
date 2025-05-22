@@ -14,6 +14,7 @@ export interface UserProfile {
   updatedAt?: Timestamp | Date;
   lastLoginAt?: Timestamp | Date;
   provider?: string; // e.g., 'password', 'google.com'
+  is2FAEnabled?: boolean; // Added for 2FA
 }
 
 
@@ -71,3 +72,4 @@ export interface Transaction {
   creationDate: Date | Timestamp;
   reference: string;
 }
+

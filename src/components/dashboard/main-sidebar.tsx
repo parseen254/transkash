@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Link as LinkIcon, Settings, Landmark, LogOut, Users } from 'lucide-react';
+import { Home, Link as LinkIcon, Settings, Landmark, LogOut, ShieldCheck } from 'lucide-react'; // Added ShieldCheck
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -21,10 +21,10 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: '/dashboard', label: 'Home', icon: Home }, // Updated href
+  { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/dashboard/payment-links', label: 'Payment Links', icon: LinkIcon },
   { href: '/dashboard/payouts', label: 'Payout Accounts', icon: Landmark },
-  // { href: '/dashboard/customers', label: 'Customers', icon: Users }, // Example, can be added later
+  { href: '/dashboard/security', label: 'Security', icon: ShieldCheck }, // Added Security link
   { href: '/dashboard/settings', label: 'Profile Settings', icon: Settings },
 ];
 
@@ -103,9 +103,10 @@ export function MainSidebar() {
 
       <nav className="flex-grow p-4 space-y-2">
         {navItems.map((item) => {
-          const isActive = item.href === '/dashboard'
-            ? pathname === '/dashboard' // Exact match for the root dashboard page
-            : pathname.startsWith(item.href); // StartsWith for all other nested dashboard pages
+          // Exact match for /dashboard, startsWith for others
+          const isActive = item.href === '/dashboard' 
+            ? pathname === item.href 
+            : pathname.startsWith(item.href);
 
           return (
             <Link href={item.href} key={item.label} legacyBehavior>
@@ -141,3 +142,4 @@ export function MainSidebar() {
     </aside>
   );
 }
+
