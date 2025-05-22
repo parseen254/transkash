@@ -8,7 +8,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { useEffect, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, CalendarIcon } from 'lucide-react';
+import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,32 +17,44 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Switch } from '@/components/ui/switch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { useToast } from '@/hooks/use-toast';
 import type { PaymentLink, PayoutAccount } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 const editPaymentLinkSchema = z.object({
   linkName: z.string().min(1, { message: 'Link name is required.' }),
   reference: z.string().min(1, { message: 'Reference is required.' }),
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: 'Amount must be a valid number.' }),
   purpose: z.string().min(1, { message: 'Purpose is required.' }),
-  payoutAccountId: z.string().optional(), // ID of the payout account, can be "" for none
+  payoutAccountId: z.string().optional(),
+  hasExpiry: z.boolean().default(false),
+  expiryDate: z.date().optional(),
+}).refine(data => {
+  if (data.hasExpiry && !data.expiryDate) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Expiry date is required when expiry is enabled.',
+  path: ['expiryDate'],
 });
 
 type EditPaymentLinkFormValues = z.infer<typeof editPaymentLinkSchema>;
 
-// Dummy data for payout accounts
 const dummyPayoutAccounts: PayoutAccount[] = [
   { id: 'acc_1', accountName: 'Main Business Account', accountNumber: 'xxxx', bankName: 'Equity', status: 'Active' },
   { id: 'acc_2', accountName: 'Personal Savings', accountNumber: 'xxxx', bankName: 'KCB', status: 'Active' },
 ];
 
-// Special value for the "None" option in the SelectItem, must not be an empty string.
 const NONE_PAYOUT_ACCOUNT_VALUE = "___NONE___";
 
 const EditPaymentLinkPage: NextPage = () => {
   const router = useRouter();
   const params = useParams();
-  const { id } = params; // Payment link ID
+  const { id } = params;
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
 
@@ -52,31 +65,40 @@ const EditPaymentLinkPage: NextPage = () => {
       reference: '',
       amount: '',
       purpose: '',
-      payoutAccountId: '', // react-hook-form state will use "" for "None"
+      payoutAccountId: '',
+      hasExpiry: false,
+      expiryDate: undefined,
     },
   });
+
+  const watchHasExpiry = form.watch('hasExpiry');
 
   useEffect(() => {
     const fetchLinkData = async () => {
       setLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 500)); 
-      const dummyLinkData: PaymentLink = { 
-        id: id as string, 
-        linkName: `Invoice #${id} Payment`, 
-        reference: `INV-${id}`, 
-        amount: '5000.00', 
-        purpose: 'Consultation Services Update', 
-        creationDate: '2023-10-01', 
-        expiryDate: '2023-10-15', 
+      await new Promise(resolve => setTimeout(resolve, 500));
+      // Dummy link data - including potential expiry info
+      const dummyLinkData: PaymentLink & { hasExpiry?: boolean } = {
+        id: id as string,
+        linkName: `Invoice #${id} Payment`,
+        reference: `INV-${id}`,
+        amount: '5000.00',
+        purpose: 'Consultation Services Update',
+        creationDate: '2023-10-01',
         status: 'Active',
-        payoutAccount: 'acc_1' // This could be undefined or an empty string from a real API
+        payoutAccount: 'acc_1',
+        hasExpiry: id === 'pl_1', // Example: link pl_1 has expiry
+        expiryDate: id === 'pl_1' ? new Date(new Date().setDate(new Date().getDate() + 7)).toISOString() : undefined, // Expires in 7 days if pl_1
       };
+
       form.reset({
         linkName: dummyLinkData.linkName,
         reference: dummyLinkData.reference,
         amount: dummyLinkData.amount,
         purpose: dummyLinkData.purpose,
-        payoutAccountId: dummyLinkData.payoutAccount || '', // Ensure it's at least "" for form state
+        payoutAccountId: dummyLinkData.payoutAccount || '',
+        hasExpiry: !!dummyLinkData.hasExpiry,
+        expiryDate: dummyLinkData.expiryDate ? new Date(dummyLinkData.expiryDate) : undefined,
       });
       setLoading(false);
     };
@@ -87,9 +109,16 @@ const EditPaymentLinkPage: NextPage = () => {
 
   const onSubmit = async (data: EditPaymentLinkFormValues) => {
     await new Promise(resolve => setTimeout(resolve, 1000));
-    // The data.payoutAccountId from the form will already be "" if "None" was selected,
-    // due to the logic in the onValueChange handler of the Select component.
-    console.log('Updated payment link data:', id, data);
+    
+    const submissionData = { ...data };
+    if (!submissionData.hasExpiry) {
+      delete submissionData.expiryDate; 
+    }
+    if (submissionData.payoutAccountId === NONE_PAYOUT_ACCOUNT_VALUE) {
+      submissionData.payoutAccountId = '';
+    }
+
+    console.log('Updated payment link data:', id, submissionData);
     toast({
       title: "Payment Link Updated!",
       description: `${data.linkName} has been updated successfully.`,
@@ -177,14 +206,9 @@ const EditPaymentLinkPage: NextPage = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Payout Account (Optional)</FormLabel>
-                    <Select 
-                      // The 'value' prop for Select must be one of the SelectItem values.
-                      // If field.value (from RHF) is "", map it to NONE_PAYOUT_ACCOUNT_VALUE for the Select.
+                    <Select
                       value={field.value === '' ? NONE_PAYOUT_ACCOUNT_VALUE : field.value}
                       onValueChange={(valueFromSelectItem) => {
-                        // When a SelectItem is chosen, its 'value' is passed here.
-                        // If it's our special "None" value, change RHF state to "".
-                        // Otherwise, use the actual item value (e.g., "acc_1").
                         field.onChange(valueFromSelectItem === NONE_PAYOUT_ACCOUNT_VALUE ? '' : valueFromSelectItem);
                       }}
                     >
@@ -194,13 +218,10 @@ const EditPaymentLinkPage: NextPage = () => {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {/* This SelectItem's value is non-empty */}
                         <SelectItem value={NONE_PAYOUT_ACCOUNT_VALUE}>None</SelectItem>
                         {dummyPayoutAccounts.map(acc => {
-                          // Ensure acc.id is not an empty string
                           if (acc.id === "") {
                             console.error("PayoutAccount found with empty ID:", acc);
-                            // Optionally skip rendering this item or throw an error
                             return null; 
                           }
                           return (
@@ -213,6 +234,72 @@ const EditPaymentLinkPage: NextPage = () => {
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="hasExpiry"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <div className="space-y-0.5">
+                      <FormLabel>Enable Expiry Date</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Set a date when this payment link will expire.
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {watchHasExpiry && (
+                <FormField
+                  control={form.control}
+                  name="expiryDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Expiry Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant={"outline"}
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date < new Date(new Date().setHours(0,0,0,0))
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
               <div className="flex justify-end">
                 <Button type="submit" disabled={form.formState.isSubmitting}>
                   {form.formState.isSubmitting ? 'Saving...' : 'Save Changes'}
@@ -227,5 +314,6 @@ const EditPaymentLinkPage: NextPage = () => {
 };
 
 export default EditPaymentLinkPage;
+    
 
     
