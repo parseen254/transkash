@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Link as LinkIcon, Settings, Landmark, LogOut, X, UserCircle } from 'lucide-react';
+import { Link as LinkIcon, Settings, Landmark, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
+import { AppLogo } from '@/components/shared/app-logo'; // Import the AppLogo component
 
 interface NavItem {
   href: string;
@@ -61,11 +62,10 @@ export function MainSidebar() {
 
   return (
     <aside className="w-64 h-screen bg-sidebar text-sidebar-foreground flex flex-col fixed top-0 left-0 shadow-lg">
-      <div className="p-4 border-b border-sidebar-border">
+      <div className="p-4 border-b border-sidebar-border flex items-center justify-center h-[65px]"> {/* Adjusted for consistent height with login page header and centered logo */}
         <Link href="/dashboard" legacyBehavior>
-          <a className="flex items-center gap-2">
-            <X className="h-8 w-8 text-sidebar-primary" />
-            <h1 className="text-xl font-bold text-sidebar-primary">pesi X</h1>
+          <a className="flex items-center">
+            <AppLogo />
           </a>
         </Link>
       </div>
