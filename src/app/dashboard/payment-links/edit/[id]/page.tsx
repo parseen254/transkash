@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { NextPage } from 'next';
@@ -23,7 +24,7 @@ const editPaymentLinkSchema = z.object({
   reference: z.string().min(1, { message: 'Reference is required.' }),
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: 'Amount must be a valid number.' }),
   purpose: z.string().min(1, { message: 'Purpose is required.' }),
-  payoutAccountId: z.string().optional(), // ID of the payout account
+  payoutAccountId: z.string().optional(), // ID of the payout account, can be "" for none
 });
 
 type EditPaymentLinkFormValues = z.infer<typeof editPaymentLinkSchema>;
@@ -33,6 +34,9 @@ const dummyPayoutAccounts: PayoutAccount[] = [
   { id: 'acc_1', accountName: 'Main Business Account', accountNumber: 'xxxx', bankName: 'Equity', status: 'Active' },
   { id: 'acc_2', accountName: 'Personal Savings', accountNumber: 'xxxx', bankName: 'KCB', status: 'Active' },
 ];
+
+// Special value for the "None" option in the SelectItem, must not be an empty string.
+const NONE_PAYOUT_ACCOUNT_VALUE = "___NONE___";
 
 const EditPaymentLinkPage: NextPage = () => {
   const router = useRouter();
@@ -48,16 +52,14 @@ const EditPaymentLinkPage: NextPage = () => {
       reference: '',
       amount: '',
       purpose: '',
-      payoutAccountId: '',
+      payoutAccountId: '', // react-hook-form state will use "" for "None"
     },
   });
 
   useEffect(() => {
-    // Simulate fetching payment link data
     const fetchLinkData = async () => {
       setLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
-      // In a real app, fetch data for `id`
+      await new Promise(resolve => setTimeout(resolve, 500)); 
       const dummyLinkData: PaymentLink = { 
         id: id as string, 
         linkName: `Invoice #${id} Payment`, 
@@ -67,14 +69,14 @@ const EditPaymentLinkPage: NextPage = () => {
         creationDate: '2023-10-01', 
         expiryDate: '2023-10-15', 
         status: 'Active',
-        payoutAccount: 'acc_1'
+        payoutAccount: 'acc_1' // This could be undefined or an empty string from a real API
       };
       form.reset({
         linkName: dummyLinkData.linkName,
         reference: dummyLinkData.reference,
         amount: dummyLinkData.amount,
         purpose: dummyLinkData.purpose,
-        payoutAccountId: dummyLinkData.payoutAccount,
+        payoutAccountId: dummyLinkData.payoutAccount || '', // Ensure it's at least "" for form state
       });
       setLoading(false);
     };
@@ -85,6 +87,8 @@ const EditPaymentLinkPage: NextPage = () => {
 
   const onSubmit = async (data: EditPaymentLinkFormValues) => {
     await new Promise(resolve => setTimeout(resolve, 1000));
+    // The data.payoutAccountId from the form will already be "" if "None" was selected,
+    // due to the logic in the onValueChange handler of the Select component.
     console.log('Updated payment link data:', id, data);
     toast({
       title: "Payment Link Updated!",
@@ -173,17 +177,36 @@ const EditPaymentLinkPage: NextPage = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Payout Account (Optional)</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select 
+                      // The 'value' prop for Select must be one of the SelectItem values.
+                      // If field.value (from RHF) is "", map it to NONE_PAYOUT_ACCOUNT_VALUE for the Select.
+                      value={field.value === '' ? NONE_PAYOUT_ACCOUNT_VALUE : field.value}
+                      onValueChange={(valueFromSelectItem) => {
+                        // When a SelectItem is chosen, its 'value' is passed here.
+                        // If it's our special "None" value, change RHF state to "".
+                        // Otherwise, use the actual item value (e.g., "acc_1").
+                        field.onChange(valueFromSelectItem === NONE_PAYOUT_ACCOUNT_VALUE ? '' : valueFromSelectItem);
+                      }}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select a payout account" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
-                        {dummyPayoutAccounts.map(acc => (
+                        {/* This SelectItem's value is non-empty */}
+                        <SelectItem value={NONE_PAYOUT_ACCOUNT_VALUE}>None</SelectItem>
+                        {dummyPayoutAccounts.map(acc => {
+                          // Ensure acc.id is not an empty string
+                          if (acc.id === "") {
+                            console.error("PayoutAccount found with empty ID:", acc);
+                            // Optionally skip rendering this item or throw an error
+                            return null; 
+                          }
+                          return (
                            <SelectItem key={acc.id} value={acc.id}>{acc.accountName} ({acc.bankName})</SelectItem>
-                        ))}
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -204,3 +227,5 @@ const EditPaymentLinkPage: NextPage = () => {
 };
 
 export default EditPaymentLinkPage;
+
+    
