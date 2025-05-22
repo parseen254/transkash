@@ -4,7 +4,7 @@
 import type { NextPage } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense, useCallback } from 'react';
-import { HelpCircle, Smartphone, CreditCard, Receipt, AlertCircle, PartyPopper, ListChecks } from 'lucide-react';
+import { HelpCircle, Smartphone, CreditCard, Receipt, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLogo } from '@/components/shared/app-logo';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -17,7 +17,6 @@ import { format, parse, isFuture, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 // Dummy Data for Payment Links (simulates fetching from a backend based on paymentLinkId)
-// In a real app, this would be an API call.
 const dummyPaymentLinks: PaymentLink[] = [
   { id: 'pl_1', linkName: 'Invoice #1234 (The Coffee Shop)', reference: 'ORD1234567890', amount: '25.00', currency: 'KES', purpose: 'Coffee and Snacks', creationDate: new Date('2023-10-01').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 15)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_1', hasExpiry: true },
   { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: '1500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: new Date('2023-10-05').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 30)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_2', hasExpiry: true },
@@ -53,7 +52,7 @@ const PaymentForOrderContent: React.FC = () => {
 
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | undefined>(undefined);
   const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false); // Used briefly before redirect
 
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState(''); // MM/YY format
@@ -64,7 +63,6 @@ const PaymentForOrderContent: React.FC = () => {
     if (paymentLinkId) {
       setLoadingLink(true);
       setErrorLoadingLink(null);
-      // Simulate API call to fetch payment link details
       setTimeout(() => {
         const foundLink = dummyPaymentLinks.find(link => link.id === paymentLinkId);
         if (foundLink) {
@@ -93,12 +91,11 @@ const PaymentForOrderContent: React.FC = () => {
   const isCardFormValid = useCallback(() => {
     const expiryPattern = /^(0[1-9]|1[0-2])\/\d{2}$/; // MM/YY
     return (
-      cardNumber.replace(/\s/g, '').length >= 13 && // Basic card length check
+      cardNumber.replace(/\s/g, '').length >= 13 &&
       expiryPattern.test(cardExpiry) &&
       cvv.length >= 3 && cvv.length <= 4
     );
   }, [cardNumber, cardExpiry, cvv]);
-
 
   const handlePayment = async () => {
     if (!selectedPaymentMethod || !currentPaymentLink) {
@@ -106,106 +103,54 @@ const PaymentForOrderContent: React.FC = () => {
       return;
     }
 
-    setIsProcessing(true);
-    toast({ title: "Processing Payment", description: "Please wait..." });
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
+    if (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?(7\d{8})$/)) {
+      toast({ title: "Invalid Phone Number", description: "Please enter a valid M-Pesa phone number (e.g., 07XXXXXXXX).", variant: "destructive" });
+      return;
+    }
 
-    let paymentSuccessful = false;
-    const numericAmount = parseFloat(currentPaymentLink.amount);
+    if (selectedPaymentMethod === 'card' && !isCardFormValid()) {
+      toast({ title: "Invalid Card Details", description: "Please check your card information and try again.", variant: "destructive" });
+      return;
+    }
+    if (selectedPaymentMethod === 'card') {
+        const [monthStr, yearStr] = cardExpiry.split('/');
+        const parsedFullYear = `20${yearStr}`;
+        const expiryDateObject = parse(`${monthStr}/01/${parsedFullYear}`, 'MM/dd/yyyy', new Date());
+        if (!isValid(expiryDateObject) || !isFuture(new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() + 1, 0 ))) {
+            toast({ title: "Invalid Expiry Date", description: "Card expiry date is in the past or invalid.", variant: "destructive" });
+            return;
+        }
+    }
+
+
+    setIsSubmittingPayment(true);
+    toast({ title: "Initiating Payment", description: "Redirecting to payment processor..." });
+
+    // Construct query parameters for the processing page
+    const queryParams = new URLSearchParams({
+      paymentLinkId: currentPaymentLink.id,
+      method: selectedPaymentMethod,
+      amount: currentPaymentLink.amount,
+      currency: currentPaymentLink.currency || 'KES',
+      reference: currentPaymentLink.reference,
+    });
 
     if (selectedPaymentMethod === 'mpesa_stk') {
-      if (!mpesaPhoneNumber.match(/^(?:\+?254|0)?(7\d{8})$/)) {
-        toast({ title: "Invalid Phone Number", description: "Please enter a valid M-Pesa phone number (e.g., 07XXXXXXXX).", variant: "destructive" });
-        setIsProcessing(false);
-        return;
-      }
-      try {
-        const response = await fetch('/api/mpesa/initiate-payment', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNumber: mpesaPhoneNumber, amount: numericAmount, accountReference: currentPaymentLink.reference, transactionDesc: currentPaymentLink.purpose }),
-        });
-        if (response.ok) {
-          const result = await response.json();
-          paymentSuccessful = result.ResponseCode === "0";
-          if (!paymentSuccessful) toast({ title: "M-Pesa Error", description: result.CustomerMessage || result.errorMessage || "Failed to initiate M-Pesa STK push.", variant: "destructive" });
-        } else {
-          const errorData = await response.json().catch(() => ({errorMessage: "Unknown M-Pesa API error"}));
-          toast({ title: "M-Pesa API Error", description: errorData.errorMessage || "Failed to connect to M-Pesa service.", variant: "destructive" });
-        }
-      } catch (error) {
-        toast({ title: "M-Pesa Request Failed", description: "Could not reach M-Pesa service.", variant: "destructive" });
-      }
-    } else if (selectedPaymentMethod === 'mpesa_paybill') {
-      try {
-        const response = await fetch('/api/mpesa/confirm-c2b', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paymentLinkId: currentPaymentLink.id, amount: numericAmount, currency: currentPaymentLink.currency || 'KES' }),
-        });
-        if (response.ok) {
-            const result = await response.json();
-            paymentSuccessful = result.ResultCode === "0";
-            if (!paymentSuccessful) toast({ title: "Paybill Confirmation Failed", description: result.ResultDesc || "Could not confirm payment. Please ensure you made the payment correctly.", variant: "destructive" });
-        } else {
-            const errorData = await response.json().catch(() => ({ResultDesc: "Unknown Paybill API error"}));
-            toast({ title: "Paybill API Error", description: errorData.ResultDesc || "Failed to connect to Paybill confirmation service.", variant: "destructive" });
-        }
-      } catch (error) {
-        toast({ title: "Paybill Request Failed", description: "Could not reach Paybill confirmation service.", variant: "destructive" });
-      }
+      queryParams.append('mpesaPhoneNumber', mpesaPhoneNumber);
     } else if (selectedPaymentMethod === 'card') {
-       if (!isCardFormValid()) {
-        toast({ title: "Invalid Card Details", description: "Please check your card information and try again.", variant: "destructive" });
-        setIsProcessing(false);
-        return;
-       }
-
-       const [monthStr, yearStr] = cardExpiry.split('/');
-       const parsedMonth = monthStr; 
-       const parsedFullYear = `20${yearStr}`;
-
-       const expiryDateObject = parse(`${parsedMonth}/01/${parsedFullYear}`, 'MM/dd/yyyy', new Date());
-       if (!isValid(expiryDateObject) || !isFuture(new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() +1, 0 ))) { 
-           toast({ title: "Invalid Expiry Date", description: "Card expiry date is in the past or invalid.", variant: "destructive" });
-           setIsProcessing(false);
-           return;
-       }
-
-       try {
-        const response = await fetch('/api/card/authorize-payment', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            cardNumber: cardNumber.replace(/\s/g, ''), 
-            expiryMonth: parsedMonth, 
-            expiryYear: parsedFullYear, 
-            cvv, 
-            amount: numericAmount, 
-            currency: currentPaymentLink.currency || 'KES' 
-          }),
-        });
-        if (response.ok) {
-          const result = await response.json();
-          paymentSuccessful = result.result === "SUCCESS";
-          if(!paymentSuccessful) toast({ title: "Card Payment Failed", description: result.error?.explanation || "Card transaction declined.", variant: "destructive" });
-        } else {
-           const errorData = await response.json().catch(() => ({error: {explanation: "Unknown card API error"}}));
-           toast({ title: "Card API Error", description: errorData.error?.explanation || "Failed to connect to card service.", variant: "destructive" });
-        }
-      } catch (error) {
-         toast({ title: "Card Request Failed", description: "Could not reach card payment service.", variant: "destructive" });
-      }
+      queryParams.append('cardNumber', cardNumber.replace(/\s/g, ''));
+      queryParams.append('cardExpiry', cardExpiry);
+      queryParams.append('cvv', cvv);
     }
 
-    setIsProcessing(false);
-    if (paymentSuccessful) {
-        router.push(`/payment/successful?paymentLinkId=${currentPaymentLink.id}`);
-    } else {
-        router.push(`/payment/failed?paymentLinkId=${currentPaymentLink.id}`);
-    }
+    // Redirect to the processing page
+    router.push(`/payment/processing?${queryParams.toString()}`);
+    // setIsSubmittingPayment(false); // Not strictly needed as we are redirecting
   };
 
   const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, ''); 
-    if (value.length > 4) value = value.slice(0, 4); 
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 4) value = value.slice(0, 4);
 
     if (value.length > 2) {
       value = `${value.slice(0, 2)}/${value.slice(2)}`;
@@ -214,7 +159,7 @@ const PaymentForOrderContent: React.FC = () => {
     }
     setCardExpiry(value);
   };
-  
+
   if (loadingLink) {
     return (
       <div className="flex flex-col items-center justify-center flex-grow p-4 sm:p-8">
@@ -234,12 +179,22 @@ const PaymentForOrderContent: React.FC = () => {
       </div>
     );
   }
-  
+
   const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
-  const payButtonText = selectedPaymentMethod === 'card' ? `Pay ${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)}` 
-                        : selectedPaymentMethod === 'mpesa_stk' ? "Pay with M-Pesa (STK Push)"
-                        : selectedPaymentMethod === 'mpesa_paybill' ? "I've sent the money"
-                        : "Proceed to Payment";
+  let payButtonText = "Proceed to Payment";
+  let PayButtonIcon = CreditCard; // Default or fallback
+
+  if (selectedPaymentMethod === 'card') {
+    payButtonText = `Pay ${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)}`;
+    PayButtonIcon = CreditCard;
+  } else if (selectedPaymentMethod === 'mpesa_stk') {
+    payButtonText = "Pay with M-Pesa (STK Push)";
+    PayButtonIcon = Smartphone;
+  } else if (selectedPaymentMethod === 'mpesa_paybill') {
+    payButtonText = "I've sent the money";
+    PayButtonIcon = Receipt;
+  }
+
 
   return (
     <div className="w-full max-w-md space-y-6">
@@ -304,10 +259,6 @@ const PaymentForOrderContent: React.FC = () => {
                     onChange={(e) => setMpesaPhoneNumber(e.target.value)}
                     className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
             </div>
-            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing || !mpesaPhoneNumber}>
-                {isProcessing ? <Spinner className="mr-2" /> : <Smartphone className="mr-2 h-5 w-5" />}
-                {isProcessing ? 'Processing...' : payButtonText}
-            </Button>
         </div>
       )}
 
@@ -322,10 +273,6 @@ const PaymentForOrderContent: React.FC = () => {
                 <li>Enter Amount: <strong className="text-foreground">{currentPaymentLink.currency} {parseFloat(currentPaymentLink.amount).toFixed(2)}</strong></li>
                 <li>Enter your M-Pesa PIN and confirm</li>
             </ul>
-            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing}>
-                {isProcessing ? <Spinner className="mr-2" /> : <Receipt className="mr-2 h-5 w-5" />}
-                {isProcessing ? 'Confirming...' : payButtonText}
-            </Button>
         </div>
       )}
 
@@ -355,18 +302,21 @@ const PaymentForOrderContent: React.FC = () => {
                         className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
                 </div>
            </div>
-            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg" disabled={isProcessing || !isCardFormValid()}>
-                {isProcessing ? <Spinner className="mr-2" /> : <CreditCard className="mr-2 h-5 w-5" />}
-                {isProcessing ? 'Processing...' : `Pay ${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)}`}
-            </Button>
         </div>
       )}
 
-       {selectedPaymentMethod && (
-         <Button variant="link" onClick={() => setSelectedPaymentMethod(undefined)} 
-            className="w-full text-muted-foreground hover:text-primary" disabled={isProcessing}>
-            Change payment method
-        </Button>
+      {selectedPaymentMethod && (
+        <>
+            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg"
+                    disabled={isSubmittingPayment || (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber) || (selectedPaymentMethod === 'card' && !isCardFormValid())}>
+                {isSubmittingPayment ? <Spinner className="mr-2" /> : <PayButtonIcon className="mr-2 h-5 w-5" />}
+                {isSubmittingPayment ? 'Processing...' : payButtonText}
+            </Button>
+            <Button variant="link" onClick={() => setSelectedPaymentMethod(undefined)}
+                className="w-full text-muted-foreground hover:text-primary" disabled={isSubmittingPayment}>
+                Change payment method
+            </Button>
+        </>
        )}
     </div>
   );
@@ -397,6 +347,4 @@ const PaymentForOrderPage: NextPage = () => {
 };
 
 export default PaymentForOrderPage;
-    
-
     
