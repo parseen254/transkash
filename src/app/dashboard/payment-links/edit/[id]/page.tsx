@@ -8,9 +8,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CalendarIcon } from 'lucide-react';
+import { ArrowLeft, CalendarIcon, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
-
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,15 +22,25 @@ import { Calendar } from '@/components/ui/calendar';
 import { useToast } from '@/hooks/use-toast';
 import type { PaymentLink, PayoutAccount } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/auth-context';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { Skeleton } from '@/components/ui/skeleton';
+
 
 const editPaymentLinkSchema = z.object({
   linkName: z.string().min(1, { message: 'Link name is required.' }),
   reference: z.string().min(1, { message: 'Reference is required.' }),
-  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: 'Amount must be a valid number.' }),
+  amount: z.preprocess(
+    (val) => parseFloat(String(val)),
+    z.number().positive({ message: 'Amount must be a positive number.' })
+  ).refine(val => /^\d+(\.\d{1,2})?$/.test(String(val)), { message: 'Amount must be a valid number with up to two decimal places.' }),
+  currency: z.string().default('KES'),
   purpose: z.string().min(1, { message: 'Purpose is required.' }),
   payoutAccountId: z.string().min(1, { message: 'Payout account is required.' }),
   hasExpiry: z.boolean().default(false),
   expiryDate: z.date().optional(),
+  status: z.enum(['Active', 'Disabled', 'Expired', 'Paid']),
 }).refine(data => {
   if (data.hasExpiry && !data.expiryDate) {
     return false;
@@ -44,95 +53,125 @@ const editPaymentLinkSchema = z.object({
 
 type EditPaymentLinkFormValues = z.infer<typeof editPaymentLinkSchema>;
 
-const dummyPayoutAccounts: PayoutAccount[] = [
-  { id: 'acc_1', accountName: 'Main Business Account', accountNumber: 'xxxx', bankName: 'Equity', status: 'Active' },
-  { id: 'acc_2', accountName: 'Personal Savings', accountNumber: 'xxxx', bankName: 'KCB', status: 'Active' },
-];
-
-
 const EditPaymentLinkPage: NextPage = () => {
   const router = useRouter();
   const params = useParams();
-  const { id } = params; // id of the payment link being edited
+  const { id: paymentLinkId } = params;
   const { toast } = useToast();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [payoutAccounts, setPayoutAccounts] = useState<PayoutAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
 
   const form = useForm<EditPaymentLinkFormValues>({
     resolver: zodResolver(editPaymentLinkSchema),
     defaultValues: {
       linkName: '',
       reference: '',
-      amount: '',
+      amount: 0,
+      currency: 'KES',
       purpose: '',
       payoutAccountId: '',
       hasExpiry: false,
       expiryDate: undefined,
+      status: 'Active',
     },
   });
 
   const watchHasExpiry = form.watch('hasExpiry');
 
   useEffect(() => {
-    const fetchLinkData = async () => {
-      setLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      // Dummy link data - including potential expiry info
-      const dummyLinkData: Partial<PaymentLink> & { payoutAccount?: string } = {
-        id: id as string,
-        linkName: `Invoice #${id} Payment`,
-        reference: `INV-${id}`,
-        amount: '5000.00',
-        purpose: 'Consultation Services Update',
-        creationDate: '2023-10-01',
-        status: 'Active',
-        payoutAccount: 'acc_1', 
-        hasExpiry: id === 'pl_1', 
-        expiryDate: id === 'pl_1' ? new Date(new Date().setDate(new Date().getDate() + 7)).toISOString() : undefined,
-      };
-
-      form.reset({
-        linkName: dummyLinkData.linkName || '',
-        reference: dummyLinkData.reference || '',
-        amount: dummyLinkData.amount || '',
-        purpose: dummyLinkData.purpose || '',
-        payoutAccountId: dummyLinkData.payoutAccountId || (dummyPayoutAccounts.length > 0 ? dummyPayoutAccounts[0].id : ''),
-        hasExpiry: !!dummyLinkData.hasExpiry,
-        expiryDate: dummyLinkData.expiryDate ? new Date(dummyLinkData.expiryDate) : undefined,
-      });
-      setLoading(false);
-    };
-    if (id) {
-      fetchLinkData();
+    if (!user) {
+        router.push('/login');
+        return;
     }
-  }, [id, form]);
+    // Fetch payout accounts
+    setLoadingAccounts(true);
+    const accQuery = query(collection(db, 'payoutAccounts'), where('userId', '==', user.uid), where('status', '==', 'Active'));
+    getDocs(accQuery).then(snapshot => {
+      setPayoutAccounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PayoutAccount)));
+      setLoadingAccounts(false);
+    }).catch(err => {
+      console.error("Error fetching payout accounts: ", err);
+      toast({ title: "Error", description: "Could not fetch payout accounts.", variant: "destructive" });
+      setLoadingAccounts(false);
+    });
+
+    // Fetch payment link data
+    if (paymentLinkId) {
+      setLoading(true);
+      const linkDocRef = doc(db, 'paymentLinks', paymentLinkId as string);
+      getDoc(linkDocRef).then(docSnap => {
+        if (docSnap.exists()) {
+          const linkData = docSnap.data() as PaymentLink;
+          if (linkData.userId !== user.uid) {
+            toast({ title: "Access Denied", description: "You do not have permission to edit this link.", variant: "destructive" });
+            router.push('/dashboard/payment-links');
+            return;
+          }
+          form.reset({
+            ...linkData,
+            amount: linkData.amount, // Keep as number
+            expiryDate: linkData.expiryDate instanceof Timestamp ? linkData.expiryDate.toDate() : undefined,
+          });
+        } else {
+          toast({ title: "Error", description: "Payment link not found.", variant: "destructive" });
+          router.push('/dashboard/payment-links');
+        }
+        setLoading(false);
+      }).catch(err => {
+        console.error("Error fetching payment link: ", err);
+        toast({ title: "Error", description: "Could not load payment link details.", variant: "destructive" });
+        setLoading(false);
+      });
+    } else {
+      setLoading(false);
+    }
+  }, [paymentLinkId, user, form, router, toast]);
 
   const onSubmit = async (data: EditPaymentLinkFormValues) => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const submissionData = { ...data };
-    if (!submissionData.hasExpiry) {
-      delete submissionData.expiryDate; 
-    }
-    
-    console.log('Updated payment link data:', id, submissionData);
-    toast({
-      title: "Payment Link Updated!",
-      description: `${data.linkName} has been updated successfully.`,
-    });
-    if (id) {
-      router.push(`/dashboard/payment-links/${id}`); // Redirect to the specific link's detail page
-    } else {
-      router.push('/dashboard/payment-links'); // Fallback redirect
+    if (!user || !paymentLinkId) return;
+
+    try {
+      const linkDocRef = doc(db, 'paymentLinks', paymentLinkId as string);
+      const updateData: Partial<PaymentLink> = {
+        ...data,
+        amount: data.amount,
+        expiryDate: data.hasExpiry && data.expiryDate ? Timestamp.fromDate(data.expiryDate) : null,
+        updatedAt: serverTimestamp() as Timestamp,
+      };
+      
+      await updateDoc(linkDocRef, updateData);
+      toast({
+        title: "Payment Link Updated!",
+        description: `${data.linkName} has been updated successfully.`,
+      });
+      router.push(`/dashboard/payment-links/${paymentLinkId}`);
+    } catch (error: any) {
+      console.error('Error updating payment link:', error);
+      toast({ title: "Update Failed", description: error.message, variant: "destructive" });
     }
   };
 
-  if (loading) {
-    return <div className="flex justify-center items-center h-full"><p>Loading link details...</p></div>;
+  if (loading || loadingAccounts) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-60 mb-4" />
+        <Card className="max-w-2xl mx-auto">
+          <CardHeader><Skeleton className="h-7 w-1/2" /><Skeleton className="h-4 w-3/4 mt-1" /></CardHeader>
+          <CardContent className="space-y-6">
+            {[...Array(6)].map((_, i) => (<div key={i} className="space-y-2"><Skeleton className="h-5 w-1/4" /><Skeleton className="h-10 w-full" /></div>))}
+            <Skeleton className="h-12 w-full" />
+            <div className="flex justify-end"><Skeleton className="h-10 w-32" /></div>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
-      <Link href={id ? `/dashboard/payment-links/${id}` : "/dashboard/payment-links"} legacyBehavior>
+      <Link href={paymentLinkId ? `/dashboard/payment-links/${paymentLinkId}` : "/dashboard/payment-links"} legacyBehavior>
         <a className="inline-flex items-center gap-2 text-sm text-primary hover:underline mb-4">
           <ArrowLeft className="h-4 w-4" />
           Back to Payment Link Details
@@ -146,149 +185,61 @@ const EditPaymentLinkPage: NextPage = () => {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="linkName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Link Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Invoice #123 Payment" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormField control={form.control} name="linkName" render={({ field }) => ( <FormItem> <FormLabel>Link Name</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField
-                  control={form.control}
-                  name="reference"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Reference</FormLabel>
-                      <FormControl>
-                        <Input placeholder="INV-00123" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="amount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Amount (KES)</FormLabel>
-                      <FormControl>
-                        <Input type="number" placeholder="5000.00" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormField control={form.control} name="reference" render={({ field }) => ( <FormItem> <FormLabel>Reference</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                <FormField control={form.control} name="amount" render={({ field }) => ( <FormItem> <FormLabel>Amount ({form.getValues('currency')})</FormLabel> <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value))} /></FormControl> <FormMessage /> </FormItem> )}/>
               </div>
-              <FormField
-                control={form.control}
-                name="purpose"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Purpose</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Payment for web development services" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="payoutAccountId"
-                render={({ field }) => (
+              <FormField control={form.control} name="purpose" render={({ field }) => ( <FormItem> <FormLabel>Purpose</FormLabel> <FormControl><Textarea {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+              <FormField control={form.control} name="payoutAccountId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Payout Account</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a payout account" />
-                        </SelectTrigger>
-                      </FormControl>
+                    <Select value={field.value} onValueChange={field.onChange} disabled={loadingAccounts}>
+                      <FormControl><SelectTrigger>{loadingAccounts ? "Loading..." : <SelectValue placeholder="Select a payout account" />}</SelectTrigger></FormControl>
+                      <SelectContent>{payoutAccounts.map(acc => ( <SelectItem key={acc.id} value={acc.id}>{acc.accountName} ({acc.type === 'bank' ? acc.bankName : acc.accountNumber})</SelectItem> ))}</SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+               <FormField control={form.control} name="status" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {dummyPayoutAccounts.map(acc => {
-                          if (acc.id === "") {
-                            console.error("PayoutAccount found with empty ID:", acc);
-                            return null; 
-                          }
-                          return (
-                           <SelectItem key={acc.id} value={acc.id}>{acc.accountName} ({acc.bankName})</SelectItem>
-                          );
-                        })}
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Disabled">Disabled</SelectItem>
+                        <SelectItem value="Paid">Paid</SelectItem>
+                        <SelectItem value="Expired">Expired</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
-              <FormField
-                control={form.control}
-                name="hasExpiry"
-                render={({ field }) => (
+              <FormField control={form.control} name="hasExpiry" render={({ field }) => (
                   <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                    <div className="space-y-0.5">
-                      <FormLabel>Enable Expiry Date</FormLabel>
-                      <p className="text-xs text-muted-foreground">
-                        Set a date when this payment link will expire.
-                      </p>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
+                    <div className="space-y-0.5"> <FormLabel>Enable Expiry Date</FormLabel> <p className="text-xs text-muted-foreground">Set a date when this payment link will expire.</p> </div>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                   </FormItem>
                 )}
               />
-
               {watchHasExpiry && (
-                <FormField
-                  control={form.control}
-                  name="expiryDate"
-                  render={({ field }) => (
+                <FormField control={form.control} name="expiryDate" render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Expiry Date</FormLabel>
                       <Popover>
                         <PopoverTrigger asChild>
                           <FormControl>
-                            <Button
-                              variant={"outline"}
-                              className={cn(
-                                "w-full pl-3 text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                              )}
-                            >
-                              {field.value ? (
-                                format(field.value, "PPP")
-                              ) : (
-                                <span>Pick a date</span>
-                              )}
+                            <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal",!field.value && "text-muted-foreground")}>
+                              {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
                               <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                             </Button>
                           </FormControl>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            disabled={(date) =>
-                              date < new Date(new Date().setHours(0,0,0,0))
-                            }
-                            initialFocus
-                          />
+                          <Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))} initialFocus/>
                         </PopoverContent>
                       </Popover>
                       <FormMessage />
@@ -296,10 +247,9 @@ const EditPaymentLinkPage: NextPage = () => {
                   )}
                 />
               )}
-
               <div className="flex justify-end">
                 <Button type="submit" disabled={form.formState.isSubmitting}>
-                  {form.formState.isSubmitting ? 'Saving...' : 'Save Changes'}
+                  {form.formState.isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : 'Save Changes'}
                 </Button>
               </div>
             </form>
@@ -311,4 +261,3 @@ const EditPaymentLinkPage: NextPage = () => {
 };
 
 export default EditPaymentLinkPage;
-    

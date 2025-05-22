@@ -4,57 +4,61 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useMemo } from 'react';
-import { PlusCircle, Edit, Trash2, Copy, MoreHorizontal, Search, Eye } from 'lucide-react';
-
+import { useState, useMemo, useEffect } from 'react';
+import { PlusCircle, Edit, Trash2, Copy, MoreHorizontal, Search, Eye, Loader2 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import type { PaymentLink } from '@/lib/types';
-import { Card, CardContent } from '@/components/ui/card'; // CardHeader, CardTitle removed as not directly used in PaymentLinksTable's new structure
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { Card, CardContent } from '@/components/ui/card';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from '@/hooks/use-toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
-import { cn } from '@/lib/utils'; // Added cn for potential badge styling
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/auth-context';
+import { db } from '@/lib/firebase';
+import { collection, query, where, orderBy, onSnapshot, doc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { format } from 'date-fns';
+import { Skeleton } from '@/components/ui/skeleton';
 
-// Dummy data - updated statuses and shortUrls
-const allPaymentLinks: PaymentLink[] = [
-  { id: 'pl_1', linkName: 'Invoice #1234', reference: 'INV001', amount: '5000', currency: 'KES', purpose: 'Consultation Services', creationDate: '2023-10-01', expiryDate: '2023-10-15', status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_1', hasExpiry: true },
-  { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: '1500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: '2023-10-05', expiryDate: '2023-11-05', status: 'Paid', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_2', hasExpiry: true },
-  { id: 'pl_3', linkName: 'Monthly Subscription', reference: 'SUB003', amount: '2000', currency: 'KES', purpose: 'SaaS Subscription', creationDate: '2023-09-20', expiryDate: '2023-10-20', status: 'Expired', payoutAccountId: 'acc_2', shortUrl: '/payment/order?paymentLinkId=pl_3', hasExpiry: true },
-  { id: 'pl_4', linkName: 'Workshop Fee', reference: 'WKSHP01', amount: '10000', currency: 'KES', purpose: 'Advanced JS Workshop', creationDate: '2023-11-01', expiryDate: '2023-11-10', status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_4', hasExpiry: true },
-  { id: 'pl_5', linkName: 'Donation Drive', reference: 'DON001', amount: '500', currency: 'KES', purpose: 'Charity Fundraiser', creationDate: '2023-11-05', status: 'Active', payoutAccountId: 'acc_2', shortUrl: '/payment/order?paymentLinkId=pl_5', hasExpiry: false },
-  { id: 'pl_6', linkName: 'Old Service Retainer', reference: 'RET002', amount: '2500', currency: 'KES', purpose: 'Past Retainer', creationDate: '2023-05-10', status: 'Disabled', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_6', hasExpiry: false },
-  { id: 'pl_7', linkName: 'Paid Invoice #9101', reference: 'INV9101', amount: '750', currency: 'KES', purpose: 'Past Project', creationDate: '2023-07-20', status: 'Paid', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_7', hasExpiry: false },
-  { id: 'pl_8', linkName: 'Expired Order #1121', reference: 'ORD1121', amount: '300', currency: 'KES', purpose: 'Old Order', creationDate: '2023-07-15', status: 'Expired', payoutAccountId: 'acc_2', shortUrl: '/payment/order?paymentLinkId=pl_8', hasExpiry: false },
-];
 
-const PaymentLinksTable: React.FC<{ links: PaymentLink[], title: string, onDelete: (id: string, linkName: string) => void, onCopy: (link: PaymentLink) => void }> = ({ links, title, onDelete, onCopy }) => {
+const PaymentLinksTable: React.FC<{ 
+  links: PaymentLink[], 
+  title: string, 
+  onDelete: (id: string, linkName: string) => void, 
+  onCopy: (link: PaymentLink) => void,
+  isLoading: boolean
+}> = ({ links, title, onDelete, onCopy, isLoading }) => {
   const router = useRouter();
+
+  if (isLoading) {
+    return (
+       <div className="mb-8">
+        <h2 className="text-xl font-semibold text-foreground mb-3">{title}</h2>
+        <Card className="rounded-xl border border-border">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-card">
+                    {[...Array(5)].map((_, i) => <TableHead key={i} className="px-4 py-3"><Skeleton className="h-5 w-full" /></TableHead>)}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...Array(3)].map((_, i) => (
+                    <TableRow key={i} className="h-[60px]">
+                      {[...Array(5)].map((_, j) => <TableCell key={j} className="px-4 py-2"><Skeleton className="h-5 w-full" /></TableCell>)}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   if (links.length === 0) {
     return (
@@ -64,6 +68,17 @@ const PaymentLinksTable: React.FC<{ links: PaymentLink[], title: string, onDelet
       </div>
     );
   }
+
+  const formatDate = (dateValue: string | Date | Timestamp) => {
+    if (dateValue instanceof Timestamp) {
+      return format(dateValue.toDate(), 'PP');
+    }
+    if (dateValue instanceof Date) {
+      return format(dateValue, 'PP');
+    }
+    return format(new Date(dateValue), 'PP');
+  };
+
 
   return (
     <div className="mb-8">
@@ -98,12 +113,12 @@ const PaymentLinksTable: React.FC<{ links: PaymentLink[], title: string, onDelet
                         {link.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="px-4 py-2 text-sm text-muted-foreground">{link.currency} {link.amount}</TableCell>
+                    <TableCell className="px-4 py-2 text-sm text-muted-foreground">{link.currency} {link.amount.toFixed(2)}</TableCell>
                     <TableCell className="px-4 py-2 text-sm text-muted-foreground">
-                      {typeof link.creationDate === 'string' ? new Date(link.creationDate).toLocaleDateString() : new Date(link.creationDate as Date).toLocaleDateString()}
+                      {formatDate(link.creationDate)}
                     </TableCell>
                     <TableCell className="px-4 py-2 text-right">
-                      <AlertDialog> {/* Moved AlertDialog here to encapsulate trigger and content for each row */}
+                      <AlertDialog>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" className="h-8 w-8 p-0">
@@ -123,10 +138,7 @@ const PaymentLinksTable: React.FC<{ links: PaymentLink[], title: string, onDelet
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <AlertDialogTrigger asChild>
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                                onSelect={(e) => e.preventDefault()} // Prevents DropdownMenu from closing
-                              >
+                              <DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10" onSelect={(e) => e.preventDefault()}>
                                 <Trash2 className="mr-2 h-4 w-4" /> Delete Link
                               </DropdownMenuItem>
                             </AlertDialogTrigger>
@@ -136,8 +148,7 @@ const PaymentLinksTable: React.FC<{ links: PaymentLink[], title: string, onDelet
                             <AlertDialogHeader>
                               <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This action cannot be undone. This will permanently delete the payment link
-                                &quot;{link.linkName}&quot;.
+                                This action cannot be undone. This will permanently delete the payment link &quot;{link.linkName}&quot; and all its associated transactions.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -162,47 +173,86 @@ const PaymentLinksTable: React.FC<{ links: PaymentLink[], title: string, onDelet
 
 
 const PaymentLinksPage: NextPage = () => {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
-  const [linksData, setLinksData] = useState<PaymentLink[]>(allPaymentLinks); // For optimistic delete
+  const [allLinks, setAllLinks] = useState<PaymentLink[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
   const { toast } = useToast();
 
-  const handleDelete = (id: string, linkName: string) => {
-    // Simulate API call for deletion
-    setLinksData(prevLinks => prevLinks.filter(link => link.id !== id));
-    toast({ 
-        title: "Payment Link Deleted", 
-        description: `Link "${linkName}" has been deleted (simulated).` 
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    setLoadingData(true);
+    const linksCollection = collection(db, 'paymentLinks');
+    const q = query(linksCollection, where('userId', '==', user.uid), orderBy('creationDate', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const fetchedLinks: PaymentLink[] = [];
+      querySnapshot.forEach((doc) => {
+        fetchedLinks.push({ id: doc.id, ...doc.data() } as PaymentLink);
+      });
+      setAllLinks(fetchedLinks);
+      setLoadingData(false);
+    }, (error) => {
+      console.error("Error fetching payment links:", error);
+      toast({ title: "Error", description: "Could not fetch payment links.", variant: "destructive" });
+      setLoadingData(false);
     });
+
+    return () => unsubscribe();
+  }, [user, authLoading, router, toast]);
+
+  const handleDelete = async (id: string, linkName: string) => {
+    try {
+      // TODO: Also delete associated transactions in a batched write or cloud function
+      await deleteDoc(doc(db, 'paymentLinks', id));
+      toast({ 
+          title: "Payment Link Deleted", 
+          description: `Link "${linkName}" has been deleted.` 
+      });
+    } catch (error) {
+      console.error("Error deleting payment link:", error);
+      toast({ title: "Error", description: "Failed to delete payment link.", variant: "destructive"});
+    }
   };
   
   const handleCopyLink = (link: PaymentLink) => {
-    // For testing local paths, construct the full URL.
-    // In a real deployment, shortUrl would be a full HTTPS URL.
     const fullUrl = link.shortUrl?.startsWith('/') 
-        ? window.location.origin + link.shortUrl
+        ? `${window.location.origin}${link.shortUrl}`
         : link.shortUrl || `No URL available`;
     navigator.clipboard.writeText(fullUrl);
     toast({ title: "Link Copied!", description: `${fullUrl} copied to clipboard.` });
   };
 
-
   const filteredLinks = useMemo(() => {
-    return linksData.filter(link =>
+    return allLinks.filter(link =>
       link.linkName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       link.reference.toLowerCase().includes(searchTerm.toLowerCase()) ||
       link.purpose.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm, linksData]);
+  }, [searchTerm, allLinks]);
 
   const activeLinks = useMemo(() =>
-    filteredLinks.filter(link => link.status === 'Active'),
+    filteredLinks.filter(link => link.status === 'Active' && (!link.hasExpiry || !link.expiryDate || (link.expiryDate instanceof Timestamp ? link.expiryDate.toDate() : new Date(link.expiryDate as any)) >= new Date())),
     [filteredLinks]
   );
 
   const inactiveLinks = useMemo(() =>
-    filteredLinks.filter(link => link.status !== 'Active'), // Groups 'Paid', 'Expired', 'Disabled'
+    filteredLinks.filter(link => link.status !== 'Active' || (link.hasExpiry && link.expiryDate && (link.expiryDate instanceof Timestamp ? link.expiryDate.toDate() : new Date(link.expiryDate as any)) < new Date())),
     [filteredLinks]
   );
+  
+  if (authLoading || (!user && !authLoading)) {
+     return (
+        <div className="flex justify-center items-center h-full p-8">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        </div>
+    );
+  }
 
   return (
       <div className="space-y-6">
@@ -220,21 +270,21 @@ const PaymentLinksPage: NextPage = () => {
           <Input
             type="search"
             placeholder="Search payment links by name, reference, or purpose"
-            className="w-full bg-secondary border-secondary rounded-lg h-12 pl-10 pr-4 text-base focus-visible:ring-primary"
+            className="w-full bg-secondary border-border rounded-lg h-12 pl-10 pr-4 text-base focus-visible:ring-primary" // Updated border
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
-        <PaymentLinksTable links={activeLinks} title="Active" onDelete={handleDelete} onCopy={handleCopyLink} />
-        <PaymentLinksTable links={inactiveLinks} title="Inactive" onDelete={handleDelete} onCopy={handleCopyLink} />
+        <PaymentLinksTable links={activeLinks} title="Active" onDelete={handleDelete} onCopy={handleCopyLink} isLoading={loadingData} />
+        <PaymentLinksTable links={inactiveLinks} title="Inactive" onDelete={handleDelete} onCopy={handleCopyLink} isLoading={loadingData} />
         
-        {filteredLinks.length === 0 && searchTerm && (
+        {!loadingData && filteredLinks.length === 0 && searchTerm && (
           <div className="text-center py-10 text-muted-foreground">
               No payment links found matching your search term "{searchTerm}".
           </div>
         )}
-        {linksData.length === 0 && !searchTerm && (
+        {!loadingData && allLinks.length === 0 && !searchTerm && (
             <Card className="rounded-xl border border-border">
                  <CardContent className="p-6 text-center text-muted-foreground">
                     No payment links created yet. <Link href="/dashboard/payment-links/create" className="text-primary hover:underline">Create your first link!</Link>
@@ -245,6 +295,4 @@ const PaymentLinksPage: NextPage = () => {
   );
 };
 
-
 export default PaymentLinksPage;
-

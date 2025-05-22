@@ -7,13 +7,16 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { ArrowLeft, Landmark } from 'lucide-react';
-
+import { ArrowLeft, Landmark, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormDescription as FormDesc, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/auth-context';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import type { PayoutAccount } from '@/lib/types';
 
 const bankAccountSchema = z.object({
   accountName: z.string().min(1, { message: 'Account nickname is required.' }),
@@ -24,15 +27,15 @@ const bankAccountSchema = z.object({
   swiftCode: z.string()
     .min(8, { message: "SWIFT/BIC code must be between 8 and 11 characters." })
     .max(11, { message: "SWIFT/BIC code must be between 8 and 11 characters." })
-    .regex(/^[A-Z0-9]{8,11}$/, { message: "Invalid SWIFT/BIC code format." }),
+    .regex(/^[A-Za-z0-9]{8,11}$/, { message: "Invalid SWIFT/BIC code format." }), // Allow A-Z for swift
 });
 
 type BankAccountFormValues = z.infer<typeof bankAccountSchema>;
 
-
 const AddBankAccountPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const form = useForm<BankAccountFormValues>({
     resolver: zodResolver(bankAccountSchema),
@@ -47,13 +50,38 @@ const AddBankAccountPage: NextPage = () => {
   });
 
   const onSubmit = async (data: BankAccountFormValues) => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('Bank account data:', data);
-    toast({
-      title: "Bank Account Added",
-      description: `${data.accountName} (${data.bankName}) has been added successfully.`,
-    });
-    router.push('/dashboard/payouts');
+    if (!user) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const newAccountData: Omit<PayoutAccount, 'id' | 'createdAt' | 'updatedAt' > = {
+        userId: user.uid,
+        type: 'bank',
+        status: 'Active', // Or 'Pending' if verification is needed
+        ...data,
+        // Explicitly ensure these fields are part of the data object for PayoutAccount type
+        swiftCode: data.swiftCode, 
+        routingNumber: data.routingNumber,
+        bankName: data.bankName,
+        accountHolderName: data.accountHolderName,
+      };
+      
+      await addDoc(collection(db, 'payoutAccounts'), {
+        ...newAccountData,
+        createdAt: serverTimestamp(),
+      });
+
+      toast({
+        title: "Bank Account Added",
+        description: `${data.accountName} (${data.bankName}) has been added successfully.`,
+      });
+      router.push('/dashboard/payouts');
+    } catch (error: any) {
+      console.error("Error adding bank account:", error);
+      toast({ title: "Error", description: `Failed to add bank account: ${error.message}`, variant: "destructive" });
+    }
   };
 
   return (
@@ -69,7 +97,7 @@ const AddBankAccountPage: NextPage = () => {
           <div className="flex items-center gap-3">
             <Landmark className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-2xl">Add Payout Account</CardTitle>
+              <CardTitle className="text-2xl">Add Bank Account</CardTitle>
               <CardDescription>Provide details for your new bank payout account.</CardDescription>
             </div>
           </div>
@@ -159,7 +187,7 @@ const AddBankAccountPage: NextPage = () => {
               />
               <div className="flex justify-end">
                 <Button type="submit" disabled={form.formState.isSubmitting}>
-                  {form.formState.isSubmitting ? 'Adding...' : 'Add Bank Account'}
+                  {form.formState.isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Adding...</> : 'Add Bank Account'}
                 </Button>
               </div>
             </form>
