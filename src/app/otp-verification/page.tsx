@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react'; // Import Suspense
+import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,25 +23,19 @@ const otpSchema = z.object({
 
 type OTPFormValues = z.infer<typeof otpSchema>;
 
-const OTPVerificationPage: NextPage = () => {
+// This component contains the logic using useSearchParams
+const OtpVerificationFormContent: React.FC = () => {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams(); // The hook is used here
   const { toast } = useToast();
-  const [email, setEmail] = useState<string | null>(null); 
+  const [email, setEmail] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    // This page is no longer directly used by the primary email/password + Google auth flow.
-    // Firebase handles email verification via links sent to the user's email.
-    // This page could be repurposed for other OTP needs (e.g., phone verification) if added later.
     setInfoMessage("This OTP verification page is not currently used for standard email/password or Google sign-in flows. Firebase handles email verification directly via email links.");
-
-    // Example: You might get an email from query params if you redirect here for some custom flow
     const queryEmail = searchParams.get('email');
     if (queryEmail) {
       setEmail(queryEmail);
-    } else {
-       // setEmail("user@example.com"); // Placeholder if no email is passed
     }
   }, [searchParams]);
 
@@ -52,23 +47,19 @@ const OTPVerificationPage: NextPage = () => {
   });
 
   const onSubmit = async (data: OTPFormValues) => {
-    // This submission logic would need to be implemented based on a specific OTP service
-    // if this page were to be actively used.
     console.log('OTP data (currently not processed):', data);
     toast({
       title: "OTP Submitted (Placeholder)",
       description: "This OTP verification is a placeholder and not connected to a backend service.",
     });
-
-    // Example: Redirect based on a 'reason' param, if this page were part of a flow
     const reason = searchParams.get('reason');
     if (reason === 'custom_flow') {
-      router.push('/dashboard'); 
+      router.push('/dashboard');
     }
   };
 
   return (
-    <CenteredCardLayout title="OTP Verification (Under Review)">
+    <>
       {infoMessage && (
          <Alert className="mb-6">
           <Terminal className="h-4 w-4" />
@@ -91,9 +82,9 @@ const OTPVerificationPage: NextPage = () => {
               <FormItem>
                 <FormLabel className="sr-only">OTP Code</FormLabel>
                 <FormControl>
-                  <Input 
-                    placeholder="123456" 
-                    {...field} 
+                  <Input
+                    placeholder="123456"
+                    {...field}
                     maxLength={6}
                     className="text-center text-2xl tracking-[0.5em]"
                     disabled // Disabled as this page is not fully functional in the current auth flow
@@ -118,6 +109,16 @@ const OTPVerificationPage: NextPage = () => {
           <a className="font-medium text-primary hover:underline">Back to Login</a>
         </Link>
       </div>
+    </>
+  );
+};
+
+const OTPVerificationPage: NextPage = () => {
+  return (
+    <CenteredCardLayout title="OTP Verification (Under Review)">
+      <Suspense fallback={<div className="text-center text-muted-foreground p-6">Loading verification details...</div>}>
+        <OtpVerificationFormContent />
+      </Suspense>
     </CenteredCardLayout>
   );
 };
