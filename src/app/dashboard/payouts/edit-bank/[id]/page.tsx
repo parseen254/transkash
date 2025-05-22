@@ -3,18 +3,22 @@
 
 import type { NextPage } from 'next';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { ArrowLeft, Landmark } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, Landmark, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormDescription as FormDesc, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
+import type { PayoutAccount } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
 
+// Re-using schema from add-bank page
 const bankAccountSchema = z.object({
   accountName: z.string().min(1, { message: 'Account nickname is required.' }),
   accountHolderName: z.string().min(1, { message: 'Account holder name is required.' }),
@@ -29,10 +33,19 @@ const bankAccountSchema = z.object({
 
 type BankAccountFormValues = z.infer<typeof bankAccountSchema>;
 
+// Mock data for fetching - replace with actual API call
+const dummyPayoutAccounts: PayoutAccount[] = [
+  { id: '1', type: 'bank', accountName: 'Main Business Account', accountNumber: '**** **** **** 1234', accountHolderName: 'PesiX Corp', bankName: 'Bank of America', routingNumber: '123456789', swiftCode: 'BOFAUS3N', status: 'Active' },
+  { id: '2', type: 'bank', accountName: 'Project Funds', accountNumber: '**** **** **** 5678', accountHolderName: 'PesiX Projects', bankName: 'Chase Bank', routingNumber: '987654321', swiftCode: 'CHASUS33', status: 'Active' },
+];
 
-const AddBankAccountPage: NextPage = () => {
+const EditBankAccountPage: NextPage = () => {
   const router = useRouter();
+  const params = useParams();
+  const { id } = params;
   const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<BankAccountFormValues>({
     resolver: zodResolver(bankAccountSchema),
@@ -46,15 +59,60 @@ const AddBankAccountPage: NextPage = () => {
     },
   });
 
+  useEffect(() => {
+    if (id) {
+      setLoading(true);
+      // Simulate API call
+      setTimeout(() => {
+        const accountToEdit = dummyPayoutAccounts.find(acc => acc.id === id && acc.type === 'bank');
+        if (accountToEdit) {
+          form.reset({
+            accountName: accountToEdit.accountName,
+            accountHolderName: accountToEdit.accountHolderName || '',
+            // Masked account number is for display only. Real form should use unmasked.
+            // For this mock, we'll just keep it potentially masked or expect full if it were real.
+            accountNumber: accountToEdit.accountNumber.includes('*') ? '' : accountToEdit.accountNumber, 
+            bankName: accountToEdit.bankName || '',
+            routingNumber: accountToEdit.routingNumber || '',
+            swiftCode: accountToEdit.swiftCode || '',
+          });
+        } else {
+          toast({ title: "Error", description: "Bank account not found.", variant: "destructive" });
+          router.push('/dashboard/payouts');
+        }
+        setLoading(false);
+      }, 700);
+    }
+  }, [id, router, toast, form]);
+
   const onSubmit = async (data: BankAccountFormValues) => {
+    setIsSubmitting(true);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('Bank account data:', data);
+    console.log('Updated bank account data for ID:', id, data);
     toast({
-      title: "Bank Account Added",
-      description: `${data.accountName} (${data.bankName}) has been added successfully.`,
+      title: "Bank Account Updated",
+      description: `${data.accountName} (${data.bankName}) has been updated successfully.`,
     });
     router.push('/dashboard/payouts');
+    setIsSubmitting(false);
   };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Card className="max-w-2xl mx-auto">
+          <CardHeader>
+            <div className="flex items-center gap-3"> <Landmark className="h-7 w-7 text-primary" /> <div> <Skeleton className="h-7 w-48" /><Skeleton className="h-4 w-64 mt-1" /></div></div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {[...Array(6)].map((_, i) => <div key={i}><Skeleton className="h-5 w-1/4 mb-2" /><Skeleton className="h-10 w-full" /></div>)}
+            <div className="flex justify-end"><Skeleton className="h-10 w-24" /></div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -69,8 +127,8 @@ const AddBankAccountPage: NextPage = () => {
           <div className="flex items-center gap-3">
             <Landmark className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-2xl">Add Payout Account</CardTitle>
-              <CardDescription>Provide details for your new bank payout account.</CardDescription>
+              <CardTitle className="text-2xl">Edit Bank Account</CardTitle>
+              <CardDescription>Update the details for your bank payout account.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -113,6 +171,7 @@ const AddBankAccountPage: NextPage = () => {
                     <FormControl>
                       <Input placeholder="Enter account number" {...field} />
                     </FormControl>
+                     <FormDesc>Enter the full account number to update it.</FormDesc>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -158,8 +217,8 @@ const AddBankAccountPage: NextPage = () => {
                 )}
               />
               <div className="flex justify-end">
-                <Button type="submit" disabled={form.formState.isSubmitting}>
-                  {form.formState.isSubmitting ? 'Adding...' : 'Add Bank Account'}
+                <Button type="submit" disabled={isSubmitting || form.formState.isSubmitting}>
+                  {isSubmitting || form.formState.isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : 'Save Changes'}
                 </Button>
               </div>
             </form>
@@ -170,4 +229,4 @@ const AddBankAccountPage: NextPage = () => {
   );
 };
 
-export default AddBankAccountPage;
+export default EditBankAccountPage;

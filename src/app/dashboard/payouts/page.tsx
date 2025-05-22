@@ -11,14 +11,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 // Dummy data - updated with type and M-Pesa examples
 const dummyPayoutAccounts: PayoutAccount[] = [
-  { id: '1', type: 'bank', accountName: 'Main Business Account', accountNumber: '**** **** **** 1234', bankName: 'Bank of America', status: 'Active' },
-  { id: '2', type: 'bank', accountName: 'Project Funds', accountNumber: '**** **** **** 5678', bankName: 'Chase Bank', status: 'Active' },
+  { id: '1', type: 'bank', accountName: 'Main Business Account', accountNumber: '**** **** **** 1234', accountHolderName: 'PesiX Corp', bankName: 'Bank of America', routingNumber: '123456789', swiftCode: 'BOFAUS3N', status: 'Active' },
+  { id: '2', type: 'bank', accountName: 'Project Funds', accountNumber: '**** **** **** 5678', accountHolderName: 'PesiX Projects', bankName: 'Chase Bank', routingNumber: '987654321', swiftCode: 'CHASUS33', status: 'Active' },
   { id: '3', type: 'mpesa', accountName: 'Sophia Bennett M-Pesa', accountNumber: '+254712345678', accountHolderName: 'Sophia Bennett', status: 'Active' },
-  { id: '4', type: 'bank', accountName: 'Secondary Business', accountNumber: '**** **** **** 9012', bankName: 'Equity Bank Kenya', status: 'Pending' },
+  { id: '4', type: 'bank', accountName: 'Secondary Business', accountNumber: '**** **** **** 9012', accountHolderName: 'PesiX Global', bankName: 'Equity Bank Kenya', routingNumber: '000000000', swiftCode: 'EQBLKENA', status: 'Pending' },
   { id: '5', type: 'mpesa', accountName: 'John Doe M-Pesa', accountNumber: '+254700000000', accountHolderName: 'John Doe', status: 'Disabled' },
 ];
 
-const PayoutAccountItem: React.FC<{ account: PayoutAccount; onEdit: (id: string) => void }> = ({ account, onEdit }) => {
+const PayoutAccountItem: React.FC<{ account: PayoutAccount; onEdit: (id: string, type: 'bank' | 'mpesa') => void }> = ({ account, onEdit }) => {
   const Icon = account.type === 'bank' ? Landmark : Phone;
   const primaryIdentifier = account.type === 'bank' ? `...${account.accountNumber.slice(-4)}` : account.accountNumber;
   const secondaryIdentifier = account.type === 'bank' ? account.bankName : account.accountHolderName;
@@ -30,11 +30,11 @@ const PayoutAccountItem: React.FC<{ account: PayoutAccount; onEdit: (id: string)
           <Icon className="h-5 w-5 text-muted-foreground" />
         </div>
         <div>
-          <p className="font-medium text-foreground">{primaryIdentifier}</p>
-          <p className="text-sm text-muted-foreground">{secondaryIdentifier}</p>
+          <p className="font-medium text-foreground">{account.accountName}</p> {/* Display Nickname */}
+          <p className="text-sm text-muted-foreground">{primaryIdentifier} - {secondaryIdentifier}</p>
         </div>
       </div>
-      <Button variant="ghost" size="icon" onClick={() => onEdit(account.id)} aria-label="Edit account">
+      <Button variant="ghost" size="icon" onClick={() => onEdit(account.id, account.type)} aria-label="Edit account">
         <Edit2 className="h-5 w-5 text-muted-foreground hover:text-foreground" />
       </Button>
     </div>
@@ -47,13 +47,12 @@ const PayoutAccountsPage: NextPage = () => {
   const bankAccounts = dummyPayoutAccounts.filter(acc => acc.type === 'bank');
   const mpesaAccounts = dummyPayoutAccounts.filter(acc => acc.type === 'mpesa');
 
-  const handleEdit = (id: string) => {
-    // For now, navigate to a generic edit page or log.
-    // Replace with actual navigation to an edit page: router.push(`/dashboard/payouts/edit/${id}`);
-    console.log(`Edit account ${id}`);
-    // Example navigation, assuming an edit page exists:
-    // router.push(`/dashboard/payouts/edit/${id}`); // You'll need to create this page
-    alert(`Simulating edit for account ID: ${id}. You need to create /dashboard/payouts/edit/[id]/page.tsx`);
+  const handleEdit = (id: string, type: 'bank' | 'mpesa') => {
+    if (type === 'bank') {
+      router.push(`/dashboard/payouts/edit-bank/${id}`);
+    } else if (type === 'mpesa') {
+      router.push(`/dashboard/payouts/edit-mpesa/${id}`);
+    }
   };
 
   return (
@@ -84,7 +83,7 @@ const PayoutAccountsPage: NextPage = () => {
         </Card>
         <div className="mt-4 flex justify-end">
           <Link href="/dashboard/payouts/add-bank" legacyBehavior>
-            <Button> {/* Removed variant="outline" to use default primary style */}
+            <Button>
               <PlusCircle className="mr-2 h-4 w-4" /> Add bank account
             </Button>
           </Link>
@@ -113,7 +112,7 @@ const PayoutAccountsPage: NextPage = () => {
         </Card>
         <div className="mt-4 flex justify-end">
           <Link href="/dashboard/payouts/add-mpesa" legacyBehavior>
-            <Button> {/* Removed variant="outline" to use default primary style */}
+            <Button>
               <PlusCircle className="mr-2 h-4 w-4" /> Add M-Pesa account
             </Button>
           </Link>

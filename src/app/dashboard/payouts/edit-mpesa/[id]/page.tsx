@@ -3,18 +3,22 @@
 
 import type { NextPage } from 'next';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { ArrowLeft, Phone } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, Phone, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
+import type { PayoutAccount } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
 
+// Re-using schema from add-mpesa page
 const mpesaAccountSchema = z.object({
   accountHolderName: z.string().min(1, { message: 'Account holder name is required.' }),
   accountNumber: z.string()
@@ -24,9 +28,20 @@ const mpesaAccountSchema = z.object({
 
 type MpesaAccountFormValues = z.infer<typeof mpesaAccountSchema>;
 
-const AddMpesaAccountPage: NextPage = () => {
+// Mock data for fetching - replace with actual API call
+const dummyPayoutAccounts: PayoutAccount[] = [
+    { id: '3', type: 'mpesa', accountName: 'Sophia Bennett M-Pesa', accountNumber: '+254712345678', accountHolderName: 'Sophia Bennett', status: 'Active' },
+    { id: '5', type: 'mpesa', accountName: 'John Doe M-Pesa', accountNumber: '+254700000000', accountHolderName: 'John Doe', status: 'Disabled' },
+];
+
+
+const EditMpesaAccountPage: NextPage = () => {
   const router = useRouter();
+  const params = useParams();
+  const { id } = params;
   const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<MpesaAccountFormValues>({
     resolver: zodResolver(mpesaAccountSchema),
@@ -36,15 +51,54 @@ const AddMpesaAccountPage: NextPage = () => {
     },
   });
 
+  useEffect(() => {
+    if (id) {
+      setLoading(true);
+      // Simulate API call
+      setTimeout(() => {
+        const accountToEdit = dummyPayoutAccounts.find(acc => acc.id === id && acc.type === 'mpesa');
+        if (accountToEdit) {
+          form.reset({
+            accountHolderName: accountToEdit.accountHolderName || '',
+            accountNumber: accountToEdit.accountNumber || '',
+          });
+        } else {
+          toast({ title: "Error", description: "M-Pesa account not found.", variant: "destructive" });
+          router.push('/dashboard/payouts');
+        }
+        setLoading(false);
+      }, 700);
+    }
+  }, [id, router, toast, form]);
+
   const onSubmit = async (data: MpesaAccountFormValues) => {
+    setIsSubmitting(true);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('M-Pesa account data:', data);
+    console.log('Updated M-Pesa account data for ID:', id, data);
     toast({
-      title: "M-Pesa Account Added",
-      description: `${data.accountHolderName} (${data.accountNumber}) has been added successfully.`,
+      title: "M-Pesa Account Updated",
+      description: `${data.accountHolderName} (${data.accountNumber}) has been updated successfully.`,
     });
     router.push('/dashboard/payouts');
+    setIsSubmitting(false);
   };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Card className="max-w-2xl mx-auto">
+          <CardHeader>
+            <div className="flex items-center gap-3"> <Phone className="h-7 w-7 text-primary" /> <div> <Skeleton className="h-7 w-48" /><Skeleton className="h-4 w-64 mt-1" /></div></div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {[...Array(2)].map((_, i) => <div key={i}><Skeleton className="h-5 w-1/4 mb-2" /><Skeleton className="h-10 w-full" /></div>)}
+            <div className="flex justify-end"><Skeleton className="h-10 w-24" /></div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -59,8 +113,8 @@ const AddMpesaAccountPage: NextPage = () => {
           <div className="flex items-center gap-3">
             <Phone className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-2xl">Add M-Pesa Account</CardTitle>
-              <CardDescription>Provide details for your new M-Pesa payout account.</CardDescription>
+              <CardTitle className="text-2xl">Edit M-Pesa Account</CardTitle>
+              <CardDescription>Update the details for your M-Pesa payout account.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -94,8 +148,8 @@ const AddMpesaAccountPage: NextPage = () => {
                 )}
               />
               <div className="flex justify-end">
-                <Button type="submit" disabled={form.formState.isSubmitting}>
-                  {form.formState.isSubmitting ? 'Adding...' : 'Add M-Pesa Account'}
+                <Button type="submit" disabled={isSubmitting || form.formState.isSubmitting}>
+                 {isSubmitting || form.formState.isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : 'Save Changes'}
                 </Button>
               </div>
             </form>
@@ -106,4 +160,4 @@ const AddMpesaAccountPage: NextPage = () => {
   );
 };
 
-export default AddMpesaAccountPage;
+export default EditMpesaAccountPage;
