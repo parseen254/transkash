@@ -2,16 +2,16 @@
 "use client";
 
 import type { NextPage } from 'next';
-import { ArrowUp, RefreshCw, Info, Loader2 } from 'lucide-react';
+import { ArrowUp, RefreshCw, Info, Loader2, PieChart as PieChartIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip } from 'recharts';
+import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { format } from 'date-fns';
@@ -23,8 +23,8 @@ import { useToast } from '@/hooks/use-toast';
 interface StatCardData {
   title: string;
   value: string;
-  change: string;
-  positiveChange?: boolean; // Make positiveChange optional
+  change?: string; // Make change optional as it's often N/A
+  positiveChange?: boolean;
 }
 
 interface AggregatedProductData {
@@ -33,14 +33,26 @@ interface AggregatedProductData {
   displayValue?: string; // Actual monetary value or count
 }
 
+interface TransactionStatusData {
+  name: string; // e.g., 'Completed', 'Pending', 'Failed'
+  value: number; // count of transactions
+  fill: string; // color for the pie chart segment
+}
+
 const initialStatData: StatCardData[] = [
   { title: 'Total Revenue', value: 'KES 0.00', change: 'N/A' },
-  { title: 'Avg. Transaction Value', value: 'KES 0.00', change: 'N/A' },
-  { title: 'Customer Retention Rate', value: '0%', change: 'N/A' }, // Remains placeholder
+  { title: 'Total Completed Transactions', value: '0', change: 'N/A' },
+  { title: 'Active Payment Links', value: '0', change: 'N/A' },
 ];
 
 const monthlyRevenueChartConfig = { revenue: { label: "Revenue", color: "hsl(var(--chart-1))" } } satisfies ChartConfig;
 const quarterlySalesChartConfig = { sales: { label: "Sales", color: "hsl(var(--chart-2))" } } satisfies ChartConfig;
+const transactionStatusChartConfig = {
+  Completed: { label: "Completed", color: "hsl(var(--chart-1))" },
+  Pending: { label: "Pending", color: "hsl(var(--chart-3))" },
+  Failed: { label: "Failed", color: "hsl(var(--chart-5))" },
+} satisfies ChartConfig;
+
 
 const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: () => void; className?: string }) => (
   <div className={cn("flex flex-col items-center justify-center text-center h-full gap-2 min-h-[180px]", className)}>
@@ -76,6 +88,7 @@ const DashboardPage: NextPage = () => {
   const [monthlyRevenueData, setMonthlyRevenueData] = useState<{ month: string; revenue: number }[]>([]);
   const [quarterlySalesData, setQuarterlySalesData] = useState<{ name: string; sales: number }[]>([]);
   const [topSellingProductsData, setTopSellingProductsData] = useState<AggregatedProductData[]>([]);
+  const [transactionStatusData, setTransactionStatusData] = useState<TransactionStatusData[]>([]);
   const [loadingStatsAndCharts, setLoadingStatsAndCharts] = useState(true);
 
   // Fetch latest 5 transactions for the table (real-time)
@@ -87,9 +100,9 @@ const DashboardPage: NextPage = () => {
     }
 
     setLoadingRecentTransactions(true);
-    const transactionsCollection = collection(db, 'transactions');
+    const transactionsCollectionRef = collection(db, 'transactions');
     const q = query(
-      transactionsCollection, 
+      transactionsCollectionRef, 
       where('userId', '==', user.uid), 
       orderBy('createdAt', 'desc'),
       limit(5)
@@ -111,38 +124,49 @@ const DashboardPage: NextPage = () => {
     return () => unsubscribe();
   }, [user, initialLoadComplete, authLoading, router, toast]);
 
-  // Fetch and aggregate data for stats and charts (one-time fetch on load/user change)
+  // Fetch and aggregate data for stats and charts (one-time fetch on load/user change/refresh)
   const fetchDataForStatsAndCharts = async () => {
     if (!user) return;
     setLoadingStatsAndCharts(true);
 
     try {
+      // --- Fetch all payment links for the user ---
+      const paymentLinksQuery = query(collection(db, 'paymentLinks'), where('userId', '==', user.uid));
+      const paymentLinksSnapshot = await getDocs(paymentLinksQuery);
+      const userPaymentLinks: PaymentLink[] = [];
+      paymentLinksSnapshot.forEach(doc => {
+        userPaymentLinks.push({ id: doc.id, ...doc.data() } as PaymentLink);
+      });
+
+      // --- Fetch transactions from the last year ---
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
       const oneYearAgoTimestamp = Timestamp.fromDate(oneYearAgo);
 
-      const transactionsQuery = query(
+      const allTransactionsQuery = query(
         collection(db, 'transactions'),
         where('userId', '==', user.uid),
-        where('status', '==', 'Completed'),
         where('createdAt', '>=', oneYearAgoTimestamp),
         orderBy('createdAt', 'asc')
       );
-      const transactionsSnapshot = await getDocs(transactionsQuery);
-      const completedTransactions: Transaction[] = [];
-      transactionsSnapshot.forEach(doc => {
-        completedTransactions.push({ id: doc.id, ...doc.data() } as Transaction);
+      const allTransactionsSnapshot = await getDocs(allTransactionsQuery);
+      const allUserTransactions: Transaction[] = [];
+      allTransactionsSnapshot.forEach(doc => {
+        allUserTransactions.push({ id: doc.id, ...doc.data() } as Transaction);
       });
+      
+      const completedTransactions = allUserTransactions.filter(txn => txn.status === 'Completed');
 
       // --- Aggregate for Stat Cards ---
       let totalRevenue = 0;
       completedTransactions.forEach(txn => { totalRevenue += txn.amount; });
-      const avgTxnValue = completedTransactions.length > 0 ? totalRevenue / completedTransactions.length : 0;
+      const totalCompletedTransactions = completedTransactions.length;
+      const activePaymentLinksCount = userPaymentLinks.filter(link => link.status === 'Active').length;
       
       setStatData([
-        { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}`, change: totalRevenue > 0 ? '+5%' : 'N/A', positiveChange: totalRevenue > 0 }, // Dummy change
-        { title: 'Avg. Transaction Value', value: `KES ${avgTxnValue.toFixed(2)}`, change: avgTxnValue > 0 ? '+2%' : 'N/A', positiveChange: avgTxnValue > 0 }, // Dummy change
-        { title: 'Customer Retention Rate', value: '0%', change: 'N/A' },
+        { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}` },
+        { title: 'Total Completed Transactions', value: totalCompletedTransactions.toString() },
+        { title: 'Active Payment Links', value: activePaymentLinksCount.toString() },
       ]);
 
       // --- Aggregate for Monthly Revenue Chart ---
@@ -150,7 +174,7 @@ const DashboardPage: NextPage = () => {
       const last12MonthLabels: string[] = [];
       for (let i = 11; i >= 0; i--) {
           const d = new Date();
-          d.setDate(1);
+          d.setDate(1); // Ensure it's the first of the month to avoid issues with month lengths
           d.setMonth(d.getMonth() - i);
           last12MonthsKeys.push(format(d, 'yyyy-MM'));
           last12MonthLabels.push(format(d, 'MMM'));
@@ -168,18 +192,25 @@ const DashboardPage: NextPage = () => {
       });
       setMonthlyRevenueData(last12MonthsKeys.map((key, index) => ({
           month: last12MonthLabels[index],
-          revenue: monthlyAgg[key]
+          revenue: monthlyAgg[key] || 0 // Ensure 0 if no revenue
       })));
       
       // --- Aggregate for Quarterly Sales Chart ---
       const quarterlyAgg: { [key: string]: { sales: number; quarterLabel: string } } = {};
-      for (let i = 3; i >= 0; i--) {
-          const dateForQuarter = new Date();
-          dateForQuarter.setMonth(dateForQuarter.getMonth() - (i * 3));
-          const year = dateForQuarter.getFullYear();
-          const qNum = Math.floor(dateForQuarter.getMonth() / 3) + 1;
-          const quarterKey = `${year}-Q${qNum}`;
-          quarterlyAgg[quarterKey] = { sales: 0, quarterLabel: `Q${qNum} ${year}` };
+      const currentYear = new Date().getFullYear();
+      const currentMonth = new Date().getMonth(); // 0-11
+      const currentQuarter = Math.floor(currentMonth / 3); // 0-3
+
+      for (let i = 3; i >= 0; i--) { // Last 4 quarters including current
+          let yearForQuarter = currentYear;
+          let qNumForQuarter = currentQuarter - i;
+          
+          if (qNumForQuarter < 0) {
+              qNumForQuarter += 4;
+              yearForQuarter -=1;
+          }
+          const quarterKey = `${yearForQuarter}-Q${qNumForQuarter + 1}`;
+          quarterlyAgg[quarterKey] = { sales: 0, quarterLabel: `Q${qNumForQuarter + 1} ${yearForQuarter}` };
       }
       completedTransactions.forEach(txn => {
         if (txn.createdAt instanceof Timestamp) {
@@ -192,19 +223,12 @@ const DashboardPage: NextPage = () => {
           }
         }
       });
-      setQuarterlySalesData(Object.keys(quarterlyAgg).sort().map(key => ({ name: quarterlyAgg[key].quarterLabel.split(' ')[0], sales: quarterlyAgg[key].sales })));
+      setQuarterlySalesData(Object.keys(quarterlyAgg).sort().map(key => ({ name: quarterlyAgg[key].quarterLabel.split(' ')[0], sales: quarterlyAgg[key].sales || 0 })));
 
-      // --- Aggregate for Top Selling Products Chart ---
-      const paymentLinksQuery = query(collection(db, 'paymentLinks'), where('userId', '==', user.uid));
-      const paymentLinksSnapshot = await getDocs(paymentLinksQuery);
-      const paymentLinksMap = new Map<string, PaymentLink>();
-      paymentLinksSnapshot.forEach(doc => {
-        paymentLinksMap.set(doc.id, { id: doc.id, ...doc.data() } as PaymentLink);
-      });
-
+      // --- Aggregate for Top Selling Products Chart (based on Payment Link Name) ---
       const productSales: { [linkName: string]: number } = {};
       completedTransactions.forEach(txn => {
-        const link = paymentLinksMap.get(txn.paymentLinkId);
+        const link = userPaymentLinks.find(pl => pl.id === txn.paymentLinkId);
         if (link && link.linkName) {
           productSales[link.linkName] = (productSales[link.linkName] || 0) + txn.amount;
         }
@@ -216,6 +240,20 @@ const DashboardPage: NextPage = () => {
         value: maxProductRevenue > 0 ? (revenue / maxProductRevenue) * 100 : 0,
         displayValue: `KES ${revenue.toFixed(2)}`
       })));
+
+      // --- Aggregate for Transaction Status Pie Chart ---
+      const statusCounts = { Completed: 0, Pending: 0, Failed: 0 };
+      allUserTransactions.forEach(txn => {
+        if (txn.status === 'Completed') statusCounts.Completed++;
+        else if (txn.status === 'Pending') statusCounts.Pending++;
+        else if (txn.status === 'Failed') statusCounts.Failed++;
+      });
+      setTransactionStatusData([
+        { name: 'Completed', value: statusCounts.Completed, fill: 'hsl(var(--chart-1))' },
+        { name: 'Pending', value: statusCounts.Pending, fill: 'hsl(var(--chart-3))' },
+        { name: 'Failed', value: statusCounts.Failed, fill: 'hsl(var(--chart-5))' },
+      ].filter(d => d.value > 0)); // Only include statuses with counts > 0
+
 
     } catch (error) {
       console.error("Error aggregating dashboard data:", error);
@@ -248,14 +286,20 @@ const DashboardPage: NextPage = () => {
   };
   
   const currentTopProductInfo = topSellingProductsData.length > 0 
-    ? { name: topSellingProductsData[0].name, change: "+5%" } // Dummy change
+    ? { name: topSellingProductsData[0].name, change: "" } // Remove dummy change
     : { name: "N/A", change: "N/A" };
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-[32px] font-bold tracking-light text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground text-sm">Overview of your business performance</p>
+      <div className="flex items-center justify-between">
+        <div>
+            <h1 className="text-[32px] font-bold tracking-light text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground text-sm">Overview of your business performance</p>
+        </div>
+        <Button onClick={fetchDataForStatsAndCharts} disabled={loadingStatsAndCharts}>
+            <RefreshCw className={cn("mr-2 h-4 w-4", loadingStatsAndCharts && "animate-spin")} />
+            {loadingStatsAndCharts ? "Refreshing..." : "Refresh Data"}
+        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -271,12 +315,14 @@ const DashboardPage: NextPage = () => {
                 <CardDescription className="text-base font-medium text-foreground">{stat.title}</CardDescription>
                 <CardTitle className="text-2xl font-bold tracking-light">{stat.value}</CardTitle>
             </CardHeader>
-            <CardContent className="p-6 pt-0">
-                <div className={`text-base font-medium ${stat.positiveChange === undefined ? 'text-muted-foreground' : stat.positiveChange ? 'text-green-600' : 'text-destructive'} flex items-center`}>
-                    {stat.positiveChange && <ArrowUp className="h-4 w-4 mr-1" />}
-                    {stat.change}
-                </div>
-            </CardContent>
+            {stat.change && (
+                 <CardContent className="p-6 pt-0">
+                    <div className={`text-base font-medium ${stat.positiveChange === undefined ? 'text-muted-foreground' : stat.positiveChange ? 'text-green-600' : 'text-destructive'} flex items-center`}>
+                        {stat.positiveChange && <ArrowUp className="h-4 w-4 mr-1" />}
+                        {stat.change}
+                    </div>
+                </CardContent>
+            )}
           </Card>
         ))}
       </div>
@@ -329,12 +375,12 @@ const DashboardPage: NextPage = () => {
                 {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{statData[0].value}</CardDescription>}
                 <div className="flex gap-1 pt-1">
                     <p className="text-base text-muted-foreground font-normal">Last 12 Months</p>
-                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : <p className={`text-base font-medium ${statData[0].positiveChange ? 'text-green-600' : 'text-muted-foreground'}`}>{statData[0].change}</p>}
+                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : statData[0].change && <p className={`text-base font-medium ${statData[0].positiveChange ? 'text-green-600' : 'text-muted-foreground'}`}>{statData[0].change}</p>}
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
               {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
-               monthlyRevenueData.length > 0 ? (
+               monthlyRevenueData.length > 0 && monthlyRevenueData.some(d => d.revenue > 0) ? (
                 <ChartContainer config={monthlyRevenueChartConfig} className="h-full w-full">
                     <LineChart data={monthlyRevenueData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
                         <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -355,12 +401,12 @@ const DashboardPage: NextPage = () => {
                 {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{statData[0].value}</CardDescription> }
                 <div className="flex gap-1 pt-1">
                     <p className="text-base text-muted-foreground font-normal">Last 4 Quarters</p>
-                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : <p className={`text-base font-medium ${statData[0].positiveChange ? 'text-green-600' : 'text-muted-foreground'}`}>{statData[0].change}</p>}
+                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : statData[0].change && <p className={`text-base font-medium ${statData[0].positiveChange ? 'text-green-600' : 'text-muted-foreground'}`}>{statData[0].change}</p>}
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
                 {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
-                 quarterlySalesData.length > 0 ? (
+                 quarterlySalesData.length > 0 && quarterlySalesData.some(d => d.sales > 0) ? (
                     <ChartContainer config={quarterlySalesChartConfig} className="h-full w-full">
                         <BarChart data={quarterlySalesData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
                             <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -403,6 +449,33 @@ const DashboardPage: NextPage = () => {
                 ) : (
                      <NoChartDataDisplay className="py-6" onRefreshClick={fetchDataForStatsAndCharts} />
                 )}
+            </CardContent>
+          </Card>
+          <Card className="bg-card shadow-sm rounded-xl border border-border">
+            <CardHeader className="p-6">
+              <CardTitle className="text-base font-medium text-foreground">Transaction Status Breakdown</CardTitle>
+              {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{allUserTransactions.length} Total</CardDescription>}
+              <div className="flex gap-1 pt-1">
+                    <p className="text-base text-muted-foreground font-normal">Last Year</p>
+                </div>
+            </CardHeader>
+            <CardContent className="h-[250px] p-4">
+              {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
+               transactionStatusData.length > 0 ? (
+                <ChartContainer config={transactionStatusChartConfig} className="h-full w-full">
+                  <PieChart>
+                    <RechartsTooltip content={<ChartTooltipContent hideLabel />} />
+                    <Pie data={transactionStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                      {transactionStatusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Legend wrapperStyle={{fontSize: "12px"}} />
+                  </PieChart>
+                </ChartContainer>
+              ) : (
+                <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
+              )}
             </CardContent>
           </Card>
         </div>
