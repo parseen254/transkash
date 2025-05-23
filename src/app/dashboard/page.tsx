@@ -29,8 +29,8 @@ interface StatCardData {
 
 interface AggregatedProductData {
   name: string;
-  value: number; // Represents the bar length (e.g., percentage 0-100 or actual value)
-  displayValue?: string; // e.g. "KES 1.2k"
+  value: number; 
+  displayValue?: string; 
 }
 
 interface TransactionStatusData {
@@ -115,7 +115,10 @@ const DashboardPage: NextPage = () => {
         return { start: startOfYear(now), end: endOfDay(now), description: "This Year" };
       case "allTime":
       default:
-        return { start: new Date(0), end: endOfDay(now), description: "All Time" };
+        // For "All Time", fetch up to a reasonable limit like 5 years back to avoid performance issues
+        // Or, for true "All Time" with potentially very large datasets, backend aggregation is better.
+        // Here, we'll simulate by going back far, but still cap it.
+        return { start: subDays(now, 365 * 5), end: endOfDay(now), description: "All Time" };
     }
   }, [selectedDateRangePreset]);
 
@@ -536,7 +539,7 @@ const DashboardPage: NextPage = () => {
           <Card className="bg-card shadow-sm rounded-xl border border-border">
             <CardHeader className="p-6">
               <CardTitle className="text-base font-medium text-foreground">Transaction Status Breakdown</CardTitle>
-              {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{allUserTransactionsData.length} Total</CardDescription>}
+              {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{allUserTransactionsData.length.toLocaleString()} Total</CardDescription>}
               <div className="flex gap-1 pt-1">
                     <p className="text-base text-muted-foreground font-normal">{getDateRange().description}</p>
                 </div>

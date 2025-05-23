@@ -66,6 +66,7 @@ const PaymentFailedContent: React.FC = () => {
     if (paymentLinkIdForRetry) {
       router.push(`/payment/order?paymentLinkId=${paymentLinkIdForRetry}`);
     } else {
+      // Fallback if paymentLinkIdForRetry somehow isn't set
       router.push('/'); 
     }
   };
@@ -89,9 +90,6 @@ const PaymentFailedContent: React.FC = () => {
     <div className="w-full max-w-md mx-auto text-center space-y-8">
       <h1 className="text-3xl font-bold text-foreground">Payment Failed</h1>
       <XCircle className="mx-auto h-24 w-24 text-destructive" />
-      <p className="text-muted-foreground text-lg">
-        Unfortunately, your payment could not be processed.
-      </p>
       
       {paymentLink ? (
         <div className="text-left space-y-3 p-6 bg-secondary/30 rounded-lg border border-border">
@@ -173,3 +171,4 @@ const PaymentFailedPage: NextPage = () => {
 };
 
 export default PaymentFailedPage;
+

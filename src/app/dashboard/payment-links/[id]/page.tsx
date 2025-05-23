@@ -4,8 +4,8 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState, useMemo, useRef } from 'react'; // Added useRef
-import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2, Share } from 'lucide-react';
+import { useEffect, useState, useMemo, useRef } from 'react'; 
+import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2, Share, Download } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -424,3 +424,4 @@ const PaymentLinkDetailsPage: NextPage = () => {
 };
 
 export default PaymentLinkDetailsPage;
+

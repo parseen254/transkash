@@ -107,7 +107,7 @@ const PaymentForOrderContent: React.FC = () => {
     const lastDayOfExpiryMonth = new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() + 1, 0);
 
     return (
-      cardNumber.replace(/\s/g, '').length >= 13 &&
+      cardNumber.replace(/\s/g, '').length >= 13 && cardNumber.replace(/\s/g, '').length <=19 &&
       cvv.length >= 3 && cvv.length <= 4 &&
       isValid(lastDayOfExpiryMonth) && 
       isFuture(lastDayOfExpiryMonth)
@@ -135,7 +135,7 @@ const PaymentForOrderContent: React.FC = () => {
 
     const queryParams = new URLSearchParams({
       paymentLinkId: currentPaymentLink.id,
-      creatorUserId: currentPaymentLink.creatorUserId, // Pass creatorUserId
+      creatorUserId: currentPaymentLink.creatorUserId, 
       method: selectedPaymentMethod,
       amount: String(currentPaymentLink.amount),
       currency: currentPaymentLink.currency || 'KES',
@@ -202,11 +202,14 @@ const PaymentForOrderContent: React.FC = () => {
   let PayButtonIcon = CreditCard;
 
   if (selectedPaymentMethod === 'mpesa_stk') {
-    payButtonText = "Pay with M-Pesa (STK Push)";
+    payButtonText = `Pay with M-Pesa (STK Push)`;
     PayButtonIcon = Smartphone;
   } else if (selectedPaymentMethod === 'mpesa_paybill') {
     payButtonText = "I've sent the money";
     PayButtonIcon = Receipt;
+  } else if (selectedPaymentMethod === 'card') {
+    payButtonText = `Pay ${currentPaymentLink.currency} ${currentPaymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    PayButtonIcon = CreditCard;
   }
 
 
@@ -361,3 +364,4 @@ const PaymentForOrderPage: NextPage = () => {
 };
 
 export default PaymentForOrderPage;
+
