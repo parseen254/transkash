@@ -8,14 +8,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, Pie, PieChart, Cell, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, Pie, PieChart as RechartsPieChart, Cell, Legend, ResponsiveContainer } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs, startOfDay, endOfDay, subDays, startOfYear, endOfYear, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay, subDays, startOfYear, endOfYear, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -29,8 +29,8 @@ interface StatCardData {
 
 interface AggregatedProductData {
   name: string;
-  value: number;
-  displayValue?: string;
+  value: number; // Represents the bar length (e.g., percentage 0-100 or actual value)
+  displayValue?: string; // e.g. "KES 1.2k"
 }
 
 interface TransactionStatusData {
@@ -47,6 +47,7 @@ const initialStatData: StatCardData[] = [
   { title: 'Active Payment Links', value: '0', periodDescription: 'N/A' },
 ];
 
+
 const monthlyRevenueChartConfig = { revenue: { label: "Revenue", color: "hsl(var(--chart-1))" } } satisfies ChartConfig;
 const quarterlySalesChartConfig = { sales: { label: "Sales", color: "hsl(var(--chart-2))" } } satisfies ChartConfig;
 const transactionStatusChartConfig = {
@@ -54,6 +55,7 @@ const transactionStatusChartConfig = {
   Pending: { label: "Pending", color: "hsl(var(--chart-3))" },
   Failed: { label: "Failed", color: "hsl(var(--chart-5))" },
 } satisfies ChartConfig;
+
 
 const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: () => void; className?: string }) => (
   <div className={cn("flex flex-col items-center justify-center text-center h-full gap-2 min-h-[180px]", className)}>
@@ -272,6 +274,7 @@ const DashboardPage: NextPage = () => {
     const paymentLinksQuery = query(
       collection(db, 'paymentLinks'), 
       where('userId', '==', user.uid),
+      // Not filtering payment links by date range, to count all active links regardless of selected period.
       orderBy('creationDate', 'desc') 
     );
     unsubscribeLinks = onSnapshot(paymentLinksQuery,
@@ -544,7 +547,7 @@ const DashboardPage: NextPage = () => {
                transactionStatusData.length > 0 ? (
                 <ChartContainer config={transactionStatusChartConfig} className="h-full w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
+                    <RechartsPieChart>
                       <RechartsTooltip content={<ChartTooltipContent hideLabel nameKey="name" />} />
                       <Pie data={transactionStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
                         {transactionStatusData.map((entry, index) => (
@@ -552,7 +555,7 @@ const DashboardPage: NextPage = () => {
                         ))}
                       </Pie>
                       <Legend wrapperStyle={{fontSize: "12px"}} />
-                    </PieChart>
+                    </RechartsPieChart>
                   </ResponsiveContainer>
                 </ChartContainer>
               ) : (
@@ -567,4 +570,5 @@ const DashboardPage: NextPage = () => {
 };
 
 export default DashboardPage;
+
     
