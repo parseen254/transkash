@@ -383,15 +383,17 @@ const DashboardPage: NextPage = () => {
             <CardContent className="h-[250px] p-4">
               {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
                monthlyRevenueData.length > 0 && monthlyRevenueData.some(d => d.revenue > 0) ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={monthlyRevenueData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                      <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-                      <YAxis tickLine={false} axisLine={false} tickMargin={8} />
-                      <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
-                      <Line dataKey="revenue" type="monotone" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <ChartContainer config={monthlyRevenueChartConfig} className="h-full w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={monthlyRevenueData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                        <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+                        <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                        <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
+                        <Line dataKey="revenue" type="monotone" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
               ) : (
                 <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
               )}
@@ -409,15 +411,17 @@ const DashboardPage: NextPage = () => {
             <CardContent className="h-[250px] p-4">
                 {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
                  quarterlySalesData.length > 0 && quarterlySalesData.some(d => d.sales > 0) ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={quarterlySalesData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
-                          <YAxis tickLine={false} axisLine={false} tickMargin={8} />
-                          <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="dot" hideLabel />} />
-                          <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <ChartContainer config={quarterlySalesChartConfig} className="h-full w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={quarterlySalesData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                            <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                            <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                            <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="dot" hideLabel />} />
+                            <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
                 ) : (
                      <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
                 )}
@@ -464,17 +468,19 @@ const DashboardPage: NextPage = () => {
             <CardContent className="h-[250px] p-4">
               {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
                transactionStatusData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <RechartsTooltip content={<ChartTooltipContent hideLabel />} />
-                    <Pie data={transactionStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                      {transactionStatusData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Legend wrapperStyle={{fontSize: "12px"}} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <ChartContainer config={transactionStatusChartConfig} className="h-full w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <RechartsTooltip content={<ChartTooltipContent hideLabel />} />
+                      <Pie data={transactionStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                        {transactionStatusData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Legend wrapperStyle={{fontSize: "12px"}} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
               ) : (
                 <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
               )}
