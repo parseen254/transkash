@@ -11,8 +11,8 @@ import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/compone
 import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend, ResponsiveContainer } from 'recharts';
 import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
-import { useEffect, useState, useMemo } from 'react';
-import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs, Unsubscribe } from 'firebase/firestore';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
@@ -61,9 +61,9 @@ const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: ()
       There is currently no data to display for this chart.
     </p>
     {onRefreshClick && (
-        <Button 
-            variant="secondary" 
-            size="sm" 
+        <Button
+            variant="secondary"
+            size="sm"
             className="rounded-full px-3 h-8 text-xs"
             onClick={onRefreshClick}
         >
@@ -87,22 +87,27 @@ const DashboardPage: NextPage = () => {
   const [quarterlySalesData, setQuarterlySalesData] = useState<{ name: string; sales: number }[]>([]);
   const [topSellingProductsData, setTopSellingProductsData] = useState<AggregatedProductData[]>([]);
   const [transactionStatusData, setTransactionStatusData] = useState<TransactionStatusData[]>([]);
-  const [loadingStatsAndCharts, setLoadingStatsAndCharts] = useState(true);
-  const [fetchedAllUserTransactions, setFetchedAllUserTransactions] = useState<Transaction[]>([]);
   
+  const [userPaymentLinks, setUserPaymentLinks] = useState<PaymentLink[]>([]);
+  const [allUserTransactionsData, setAllUserTransactionsData] = useState<Transaction[]>([]);
+  const [loadingLinks, setLoadingLinks] = useState(true);
+  const [loadingTransactionsForStats, setLoadingTransactionsForStats] = useState(true);
+
+  const loadingStatsAndCharts = authLoading || !initialLoadComplete || loadingLinks || loadingTransactionsForStats;
+
   // Fetch latest 5 transactions for the table (real-time)
   useEffect(() => {
     if (!initialLoadComplete || !user) {
       setLoadingRecentTransactions(!initialLoadComplete || authLoading);
-      if (initialLoadComplete && !user) router.push('/login');
+      if (initialLoadComplete && !user && !authLoading) router.push('/login');
       return;
     }
 
     setLoadingRecentTransactions(true);
     const transactionsCollectionRef = collection(db, 'transactions');
     const q = query(
-      transactionsCollectionRef, 
-      where('userId', '==', user.uid), 
+      transactionsCollectionRef,
+      where('userId', '==', user.uid),
       orderBy('createdAt', 'desc'),
       limit(5)
     );
@@ -123,25 +128,22 @@ const DashboardPage: NextPage = () => {
     return () => unsubscribe();
   }, [user, initialLoadComplete, authLoading, router, toast]);
 
-  const processDashboardData = (
-    allUserTransactions: Transaction[],
-    userPaymentLinks: PaymentLink[]
-  ) => {
-    setLoadingStatsAndCharts(true);
-    setFetchedAllUserTransactions(allUserTransactions);
 
-    const completedTransactions = allUserTransactions.filter(txn => txn.status === 'Completed');
+  const processDashboardData = useCallback((transactions: Transaction[], paymentLinks: PaymentLink[]) => {
+    if (!user) return;
+
+    const completedTransactions = transactions.filter(txn => txn.status === 'Completed');
 
     // --- Aggregate for Stat Cards ---
     let totalRevenue = 0;
     completedTransactions.forEach(txn => { totalRevenue += txn.amount; });
     const totalCompletedTransactionsCount = completedTransactions.length;
-    const activePaymentLinksCount = userPaymentLinks.filter(link => link.status === 'Active').length;
-    
+    const activePaymentLinksCount = paymentLinks.filter(link => link.status === 'Active').length;
+
     setStatData([
-      { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}` },
-      { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toString() },
-      { title: 'Active Payment Links', value: activePaymentLinksCount.toString() },
+      { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}`, change: 'N/A' },
+      { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toString(), change: 'N/A' },
+      { title: 'Active Payment Links', value: activePaymentLinksCount.toString(), change: 'N/A' },
     ]);
 
     // --- Aggregate for Monthly Revenue Chart ---
@@ -149,7 +151,7 @@ const DashboardPage: NextPage = () => {
     const last12MonthLabels: string[] = [];
     for (let i = 11; i >= 0; i--) {
         const d = new Date();
-        d.setDate(1); 
+        d.setDate(1);
         d.setMonth(d.getMonth() - i);
         last12MonthsKeys.push(format(d, 'yyyy-MM'));
         last12MonthLabels.push(format(d, 'MMM'));
@@ -167,19 +169,19 @@ const DashboardPage: NextPage = () => {
     });
     setMonthlyRevenueData(last12MonthsKeys.map((key, index) => ({
         month: last12MonthLabels[index],
-        revenue: monthlyAgg[key] || 0 
+        revenue: monthlyAgg[key] || 0
     })));
-    
+
     // --- Aggregate for Quarterly Sales Chart ---
     const quarterlyAgg: { [key: string]: { sales: number; quarterLabel: string } } = {};
     const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth(); 
-    const currentQuarter = Math.floor(currentMonth / 3); 
+    const currentMonth = new Date().getMonth();
+    const currentQuarter = Math.floor(currentMonth / 3);
 
-    for (let i = 3; i >= 0; i--) { 
+    for (let i = 3; i >= 0; i--) {
         let yearForQuarter = currentYear;
         let qNumForQuarter = currentQuarter - i;
-        
+
         if (qNumForQuarter < 0) {
             qNumForQuarter += 4;
             yearForQuarter -=1;
@@ -203,7 +205,7 @@ const DashboardPage: NextPage = () => {
     // --- Aggregate for Top Selling Products Chart (based on Payment Link Name) ---
     const productSales: { [linkName: string]: number } = {};
     completedTransactions.forEach(txn => {
-      const link = userPaymentLinks.find(pl => pl.id === txn.paymentLinkId);
+      const link = paymentLinks.find(pl => pl.id === txn.paymentLinkId);
       if (link && link.linkName) {
         productSales[link.linkName] = (productSales[link.linkName] || 0) + txn.amount;
       }
@@ -218,7 +220,7 @@ const DashboardPage: NextPage = () => {
 
     // --- Aggregate for Transaction Status Pie Chart ---
     const statusCounts = { Completed: 0, Pending: 0, Failed: 0 };
-    allUserTransactions.forEach(txn => {
+    transactions.forEach(txn => { // Use all transactions for status breakdown
       if (txn.status === 'Completed') statusCounts.Completed++;
       else if (txn.status === 'Pending') statusCounts.Pending++;
       else if (txn.status === 'Failed') statusCounts.Failed++;
@@ -227,46 +229,43 @@ const DashboardPage: NextPage = () => {
       { name: 'Completed', value: statusCounts.Completed, fill: 'hsl(var(--chart-1))' },
       { name: 'Pending', value: statusCounts.Pending, fill: 'hsl(var(--chart-3))' },
       { name: 'Failed', value: statusCounts.Failed, fill: 'hsl(var(--chart-5))' },
-    ].filter(d => d.value > 0)); 
+    ].filter(d => d.value > 0));
 
-    setLoadingStatsAndCharts(false);
-  };
-  
-  // Fetch and aggregate data for stats and charts (real-time via onSnapshot)
+  }, [user, toast]); // Dependencies: user, toast (and other stable setters if not using useCallback properly)
+
+  // Fetch Payment Links for dashboard
   useEffect(() => {
     if (!user || !initialLoadComplete) {
-      setLoadingStatsAndCharts(!initialLoadComplete || authLoading);
-      return () => {}; // Return empty cleanup if not ready
+        setLoadingLinks(!initialLoadComplete || authLoading);
+        return;
     }
-
-    setLoadingStatsAndCharts(true);
-    let isFirstLoad = true;
-
-    // --- Listener for Payment Links ---
+    setLoadingLinks(true);
     const paymentLinksQuery = query(collection(db, 'paymentLinks'), where('userId', '==', user.uid));
-    const unsubscribePaymentLinks = onSnapshot(paymentLinksQuery, 
+    const unsubscribe = onSnapshot(paymentLinksQuery,
       (linksSnapshot) => {
-        const userPaymentLinks: PaymentLink[] = [];
+        const fetchedLinks: PaymentLink[] = [];
         linksSnapshot.forEach(doc => {
-          userPaymentLinks.push({ id: doc.id, ...doc.data() } as PaymentLink);
+          fetchedLinks.push({ id: doc.id, ...doc.data() } as PaymentLink);
         });
-        
-        // Re-process with current transactions if links change
-        // (this assumes transactions are already being listened to separately or are fetched once)
-        // For a fully reactive system, this might trigger a re-fetch or re-processing of transactions if needed
-        // Here, we'll re-process with the current `fetchedAllUserTransactions` state
-        processDashboardData(fetchedAllUserTransactions, userPaymentLinks); 
-        if (isFirstLoad) setLoadingStatsAndCharts(false); // Only set loading to false on first load from links listener
-
-      }, 
+        setUserPaymentLinks(fetchedLinks);
+        setLoadingLinks(false);
+      },
       (error) => {
         console.error("Error fetching payment links for dashboard:", error);
         toast({ title: "Error", description: "Could not load payment link data.", variant: "destructive" });
-        setLoadingStatsAndCharts(false);
+        setLoadingLinks(false);
       }
     );
+    return () => unsubscribe();
+  }, [user, initialLoadComplete, authLoading, toast]);
 
-    // --- Listener for Transactions (last year) ---
+  // Fetch All Transactions (last year) for dashboard aggregations
+  useEffect(() => {
+    if (!user || !initialLoadComplete) {
+        setLoadingTransactionsForStats(!initialLoadComplete || authLoading);
+        return;
+    }
+    setLoadingTransactionsForStats(true);
     const oneYearAgo = new Date();
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
     const oneYearAgoTimestamp = Timestamp.fromDate(oneYearAgo);
@@ -275,50 +274,38 @@ const DashboardPage: NextPage = () => {
       collection(db, 'transactions'),
       where('userId', '==', user.uid),
       where('createdAt', '>=', oneYearAgoTimestamp),
-      orderBy('createdAt', 'asc') // Order by for consistency if needed by aggregation
+      orderBy('createdAt', 'asc')
     );
-    const unsubscribeTransactions = onSnapshot(allTransactionsQuery, 
-      async (transactionsSnapshot) => { // Made async to await getDocs for links inside
-        const allUserTransactions: Transaction[] = [];
+    const unsubscribe = onSnapshot(allTransactionsQuery,
+      (transactionsSnapshot) => {
+        const fetchedTxns: Transaction[] = [];
         transactionsSnapshot.forEach(doc => {
-          allUserTransactions.push({ id: doc.id, ...doc.data() } as Transaction);
+          fetchedTxns.push({ id: doc.id, ...doc.data() } as Transaction);
         });
-
-        // Fetch current payment links to pass to processDashboardData
-        // This is a one-time fetch for links within the transaction listener's scope
-        // Ideally, you'd manage links and transactions state more globally or pass them differently
-        // For simplicity here, we refetch links if transactions update, to ensure data consistency
-        const currentPaymentLinksQuery = query(collection(db, 'paymentLinks'), where('userId', '==', user.uid));
-        const currentPaymentLinksSnap = await getDocs(currentPaymentLinksQuery);
-        const currentUserPaymentLinks: PaymentLink[] = [];
-        currentPaymentLinksSnap.forEach(doc => {
-            currentUserPaymentLinks.push({ id: doc.id, ...doc.data()} as PaymentLink);
-        });
-
-        processDashboardData(allUserTransactions, currentUserPaymentLinks);
-        if (isFirstLoad) setLoadingStatsAndCharts(false); // Only set loading to false on first load from transactions listener
-        isFirstLoad = false; // After first full processing
+        setAllUserTransactionsData(fetchedTxns);
+        setLoadingTransactionsForStats(false);
       },
       (error) => {
-        console.error("Error fetching transactions for dashboard:", error);
-        toast({ title: "Error", description: "Could not load transaction data.", variant: "destructive" });
-        setLoadingStatsAndCharts(false);
+        console.error("Error fetching transactions for dashboard stats:", error);
+        toast({ title: "Error", description: "Could not load transaction data for stats.", variant: "destructive" });
+        setLoadingTransactionsForStats(false);
       }
     );
-    
-    return () => {
-      unsubscribePaymentLinks();
-      unsubscribeTransactions();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, initialLoadComplete, toast]); // Removed processDashboardData from deps to avoid loops
+    return () => unsubscribe();
+  }, [user, initialLoadComplete, authLoading, toast]);
+
+  // Process data when both links and transactions for stats are loaded/updated
+  useEffect(() => {
+    if (authLoading || !initialLoadComplete || !user || loadingLinks || loadingTransactionsForStats) {
+      return; // Wait until all necessary data is loaded and user is authenticated
+    }
+    // This will run once both initial loads are done, and subsequently if either dataset changes
+    processDashboardData(allUserTransactionsData, userPaymentLinks);
+  }, [allUserTransactionsData, userPaymentLinks, user, initialLoadComplete, authLoading, loadingLinks, loadingTransactionsForStats, processDashboardData]);
+
 
   const handleRefreshAllData = () => {
-     if (!user || !initialLoadComplete) return;
-     // This function would manually re-trigger a fetch, but since we use onSnapshot,
-     // data should be live. For a manual refresh of getDocs-based approach, it would be:
-     // fetchDataWithGetDocs(); // A hypothetical function that uses getDocs
-     toast({title: "Data is Live", description: "Dashboard data updates in real-time."})
+     toast({title: "Data is Live", description: "Dashboard analytics update in real-time."})
   };
 
 
@@ -329,15 +316,15 @@ const DashboardPage: NextPage = () => {
         </div>
     );
   }
-  
+
   const formatDateDisplay = (dateValue: Timestamp | Date | string | undefined | null) => {
     if (!dateValue) return 'N/A';
     const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue as any);
     return format(date, 'yyyy-MM-dd');
   };
-  
-  const currentTopProductInfo = useMemo(() => topSellingProductsData.length > 0 
-    ? { name: topSellingProductsData[0].name, change: "" } 
+
+  const currentTopProductInfo = useMemo(() => topSellingProductsData.length > 0
+    ? { name: topSellingProductsData[0].name, change: "" } // Change calculation not implemented here
     : { name: "N/A", change: "N/A" }, [topSellingProductsData]);
 
   return (
@@ -349,7 +336,7 @@ const DashboardPage: NextPage = () => {
         </div>
         <Button onClick={handleRefreshAllData} disabled={loadingStatsAndCharts}>
             <RefreshCw className={cn("mr-2 h-4 w-4", loadingStatsAndCharts && "animate-spin")} />
-            {loadingStatsAndCharts ? "Loading..." : "Refresh Data"}
+            {loadingStatsAndCharts ? "Loading Analytics..." : "Refresh Data"}
         </Button>
       </div>
 
@@ -430,7 +417,7 @@ const DashboardPage: NextPage = () => {
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
-              {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
+              {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> :
                monthlyRevenueData.length > 0 && monthlyRevenueData.some(d => d.revenue > 0) ? (
                 <ChartContainer config={monthlyRevenueChartConfig} className="h-full w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -458,7 +445,7 @@ const DashboardPage: NextPage = () => {
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
-                {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
+                {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> :
                  quarterlySalesData.length > 0 && quarterlySalesData.some(d => d.sales > 0) ? (
                     <ChartContainer config={quarterlySalesChartConfig} className="h-full w-full">
                       <ResponsiveContainer width="100%" height="100%">
@@ -478,11 +465,11 @@ const DashboardPage: NextPage = () => {
           </Card>
           <Card className="bg-card shadow-sm rounded-xl border border-border">
              <CardHeader className="p-6">
-                <CardTitle className="text-base font-medium text-foreground">Top Selling Products</CardTitle>
+                <CardTitle className="text-base font-medium text-foreground">Top Selling Payment Links</CardTitle>
                 {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{currentTopProductInfo.name}</CardDescription>}
                 <div className="flex gap-1 pt-1">
-                    <p className="text-base text-muted-foreground font-normal">This Quarter</p>
-                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : <p className={`text-base font-medium ${currentTopProductInfo.name !== 'N/A' ? 'text-green-600' : 'text-muted-foreground'}`}>{currentTopProductInfo.change}</p>}
+                    <p className="text-base text-muted-foreground font-normal">By Revenue (Last Year)</p>
+                    {/* Percentage change for top product not implemented here */}
                 </div>
             </CardHeader>
             <CardContent className="p-6 pt-2 min-h-[210px]">
@@ -492,7 +479,7 @@ const DashboardPage: NextPage = () => {
                         {topSellingProductsData.map((product) => (
                             <div key={product.name}>
                                 <div className="flex justify-between text-[13px] font-bold text-muted-foreground tracking-[0.015em] mb-1">
-                                    <span>{product.name}</span>
+                                    <span className="truncate" title={product.name}>{product.name}</span>
                                      <span className="text-xs text-foreground">{product.displayValue}</span>
                                 </div>
                                 <div className="h-2 w-full bg-muted rounded-full">
@@ -509,18 +496,18 @@ const DashboardPage: NextPage = () => {
           <Card className="bg-card shadow-sm rounded-xl border border-border">
             <CardHeader className="p-6">
               <CardTitle className="text-base font-medium text-foreground">Transaction Status Breakdown</CardTitle>
-              {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{fetchedAllUserTransactions.length} Total</CardDescription>}
+              {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{allUserTransactionsData.length} Total</CardDescription>}
               <div className="flex gap-1 pt-1">
                     <p className="text-base text-muted-foreground font-normal">Last Year</p>
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
-              {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
+              {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> :
                transactionStatusData.length > 0 ? (
                 <ChartContainer config={transactionStatusChartConfig} className="h-full w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <RechartsTooltip content={<ChartTooltipContent hideLabel />} />
+                      <RechartsTooltip content={<ChartTooltipContent hideLabel nameKey="name" />} />
                       <Pie data={transactionStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
                         {transactionStatusData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.fill} />
@@ -542,3 +529,4 @@ const DashboardPage: NextPage = () => {
 };
 
 export default DashboardPage;
+
