@@ -1,28 +1,5 @@
-# Specifies the configuration for the App Hosting backend.
-# This file allows you to customize the Cloud Run service settings.
-
-backend:
-  # Specifies resource limits for the Cloud Run service.
-  runConfig:
-    # Minimum number of CPU cores. 1 is usually sufficient for Next.js prototypes.
-    cpu: 1
-    # Minimum memory in MiB. 512MB is a common starting point for Next.js.
-    # You can adjust this based on your app's needs.
-    memoryMiB: 512
-    # Maximum number of instances.
-    # This is the key setting to address the quota error.
-    # Setting this to a low value (e.g., 1 or 2) for a prototype.
-    maxInstances: 2
-
-  # You can also specify environment variables here if needed,
-  # though .env files handled by Next.js are often preferred for local dev
-  # and secret manager for production secrets.
-  # env:
-  #   - variable: MY_ENV_VARIABLE
-  #     value: "its_value"
-
-# Firebase App Hosting usually infers the build environment and entry point
-# for Next.js apps, so these are often not needed unless you have a
-# highly custom setup.
-# buildEnvironment: nodejs20 # Example: specify Node.js version if needed
-# command: ["npm", "run", "start"] # Example: specify custom start command
+runConfig:
+  maxInstances: 2
+  minInstances: 0
+  cpu: 1
+  memoryMiB: 512
