@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import type { PayoutAccount, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, Timestamp, doc, setDoc } from 'firebase/firestore'; // Added setDoc
+import { collection, addDoc, serverTimestamp, query, where, Timestamp, doc, setDoc, onSnapshot } from 'firebase/firestore'; // Added onSnapshot
 import { useEffect, useState } from 'react';
 
 const paymentLinkSchema = z.object({
