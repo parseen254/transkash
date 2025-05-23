@@ -274,7 +274,6 @@ const DashboardPage: NextPage = () => {
     const paymentLinksQuery = query(
       collection(db, 'paymentLinks'), 
       where('userId', '==', user.uid),
-      // Not filtering payment links by date range, to count all active links regardless of selected period.
       orderBy('creationDate', 'desc') 
     );
     unsubscribeLinks = onSnapshot(paymentLinksQuery,
@@ -570,5 +569,6 @@ const DashboardPage: NextPage = () => {
 };
 
 export default DashboardPage;
+    
 
     
