@@ -4,8 +4,8 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2 } from 'lucide-react';
+import { useEffect, useState, useMemo, useRef } from 'react'; // Added useRef
+import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2, Download, Share } from 'lucide-react'; // Added Download, Share
 import { format } from 'date-fns';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,10 +42,18 @@ const PaymentLinkDetailsPage: NextPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [isQrCodeDialogOpen, setIsQrCodeDialogOpen] = useState(false);
+  const [webShareApiSupported, setWebShareApiSupported] = useState(false);
+
+  const qrCodeSvgRef = useRef<SVGSVGElement>(null);
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      setWebShareApiSupported(true);
+    }
+  }, []);
 
   const fullShareableUrl = useMemo(() => {
     if (paymentLink?.shortUrl && typeof window !== 'undefined') {
-      // Ensure shortUrl starts with a /
       const path = paymentLink.shortUrl.startsWith('/') ? paymentLink.shortUrl : `/${paymentLink.shortUrl}`;
       return `${window.location.origin}${path}`;
     }
@@ -163,6 +171,54 @@ const PaymentLinkDetailsPage: NextPage = () => {
     if (!dateValue) return 'N/A';
     const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue as any);
     return format(date, includeTime ? 'PPP p' : 'PPP');
+  };
+
+  const handleDownloadQrCode = () => {
+    if (qrCodeSvgRef.current && paymentLink) {
+      const svgElement = qrCodeSvgRef.current;
+      const svgString = new XMLSerializer().serializeToString(svgElement);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+
+      img.onload = () => {
+        canvas.width = img.width; // Use image dimensions for canvas
+        canvas.height = img.height;
+        ctx?.drawImage(img, 0, 0);
+        const pngUrl = canvas.toDataURL('image/png');
+        const downloadLink = document.createElement('a');
+        downloadLink.href = pngUrl;
+        downloadLink.download = `${paymentLink.linkName.replace(/\s+/g, '_')}_QR_Code.png`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        toast({ title: "QR Code Downloaded", description: "The QR code image has started downloading." });
+      };
+      // Use encodeURIComponent for SVG string in data URL
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
+    } else {
+      toast({ title: "Error", description: "Could not download QR code.", variant: "destructive" });
+    }
+  };
+
+  const handleNativeShare = async () => {
+    if (navigator.share && paymentLink && fullShareableUrl) {
+      try {
+        await navigator.share({
+          title: `Payment Link: ${paymentLink.linkName}`,
+          text: `Use this link to pay for: ${paymentLink.purpose || paymentLink.linkName}`,
+          url: fullShareableUrl,
+        });
+        toast({ title: "Shared!", description: "Payment link shared." });
+      } catch (error) {
+        // Don't show error toast if user cancels share dialog (AbortError)
+        if ((error as DOMException).name !== 'AbortError') {
+           toast({ title: "Share Failed", description: "Could not share the link.", variant: "destructive" });
+        }
+      }
+    } else if (!navigator.share) {
+      toast({ title: "Not Supported", description: "Web Share API is not supported on this browser or device.", variant: "destructive" });
+    }
   };
 
   const isLoading = authLoading || !initialLoadComplete || loadingLinkDetails || loadingLinkTransactions;
@@ -302,19 +358,21 @@ const PaymentLinkDetailsPage: NextPage = () => {
         <DialogHeader>
           <DialogTitle>Share: {paymentLink?.linkName}</DialogTitle>
           <DialogDescription>
-            Scan the QR code or copy the link below.
+            Scan the QR code or use the options below.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center justify-center space-y-4 py-4">
           {fullShareableUrl ? (
-            <QRCodeSVG 
-              value={fullShareableUrl} 
-              size={220}
-              bgColor={"#ffffff"} 
-              fgColor={"#000000"} 
-              level={"Q"} 
-              className="rounded-lg border border-border p-2 bg-white"
-            />
+            <div ref={qrCodeSvgRef as React.RefObject<HTMLDivElement>} className="inline-block"> {/* Wrapper for ref if QRCodeSVG itself doesn't take it cleanly for direct SVG access */}
+              <QRCodeSVG 
+                value={fullShareableUrl} 
+                size={220}
+                bgColor={"#ffffff"} 
+                fgColor={"#000000"} 
+                level={"Q"} 
+                className="rounded-lg border border-border p-2 bg-white"
+              />
+            </div>
           ) : (
             <div className="h-[220px] w-[220px] flex items-center justify-center bg-muted rounded-lg border border-border">
                  <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -328,15 +386,35 @@ const PaymentLinkDetailsPage: NextPage = () => {
               value={fullShareableUrl || "Generating link..."}
               className="text-sm text-center bg-secondary border-secondary"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3 w-full pt-2">
             <Button
-              variant="default"
+              variant="outline"
               className="w-full"
               onClick={() => handleCopyLink(fullShareableUrl)}
               disabled={!fullShareableUrl}
             >
               <Copy className="mr-2 h-4 w-4" /> Copy Link
             </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleDownloadQrCode}
+              disabled={!fullShareableUrl || !qrCodeSvgRef.current}
+            >
+              <Download className="mr-2 h-4 w-4" /> Download QR
+            </Button>
           </div>
+          {webShareApiSupported && (
+            <Button
+              variant="default"
+              className="w-full mt-2"
+              onClick={handleNativeShare}
+              disabled={!fullShareableUrl || !paymentLink}
+            >
+              <Share className="mr-2 h-4 w-4" /> Share via device...
+            </Button>
+          )}
         </div>
         <DialogFooter className="sm:justify-center">
           <Button type="button" variant="outline" onClick={() => setIsQrCodeDialogOpen(false)}>
