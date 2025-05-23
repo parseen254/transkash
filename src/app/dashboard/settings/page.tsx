@@ -19,7 +19,7 @@ import { useTheme } from '@/contexts/theme-provider';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'; // Added CardFooter
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
@@ -130,9 +130,13 @@ const ProfileSettingsPage: NextPage = () => {
         router.push('/login');
         setIsFetchingData(false);
     } else if (!authLoading && !initialLoadComplete && !user) {
+      // This condition might indicate the component is rendering before initialLoadComplete is true
+      // and user is still null, but auth isn't "loading" in the sense of an active Firebase check.
+      // Setting isFetchingData to false here ensures spinners stop if this state is reached.
       setIsFetchingData(false);
     }
   }, [user, authLoading, initialLoadComplete, personalForm, businessForm, router]);
+
 
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -202,6 +206,7 @@ const ProfileSettingsPage: NextPage = () => {
                 description: `Could not update login email. ${emailError.message}. Other details saved.`,
                 variant: "destructive", duration: 9000,
               });
+              // Revert email field in form if auth update failed
               personalForm.setValue('email', currentAuthUser.email || '');
           }
         }
@@ -310,6 +315,7 @@ const ProfileSettingsPage: NextPage = () => {
               </CardContent>
             </Card>
           </TabsContent>
+          {/* Add similar skeleton structures for Business, Appearance, and Data tabs if desired */}
         </Tabs>
       </div>
     );
