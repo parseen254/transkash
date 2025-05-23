@@ -2,7 +2,7 @@
 "use client";
 
 import type { NextPage } from 'next';
-import { ArrowUp, RefreshCw, Info, Loader2, PieChart as PieChartIcon, Calendar as CalendarIcon } from 'lucide-react';
+import { ArrowUp, RefreshCw, Info, Loader2, PieChart as PieChartIcon, CalendarDays as CalendarIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -13,9 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs, startOfDay, endOfDay, subDays, startOfYear, endOfYear, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfDay, endOfDay, subDays, startOfYear, endOfYear, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -24,13 +24,13 @@ import { useToast } from '@/hooks/use-toast';
 interface StatCardData {
   title: string;
   value: string;
-  periodDescription?: string; // e.g., "Last Year", "Last 30 Days"
+  periodDescription?: string;
 }
 
 interface AggregatedProductData {
   name: string;
-  value: number; // Percentage for progress bar
-  displayValue?: string; // Actual monetary value or count
+  value: number;
+  displayValue?: string;
 }
 
 interface TransactionStatusData {
@@ -169,10 +169,10 @@ const DashboardPage: NextPage = () => {
     
     const last12MonthsKeys: string[] = [];
     const last12MonthLabels: string[] = [];
-    const baseDateForMonthly = new Date(); // Use current date as base for "last 12 months"
+    const baseDateForMonthly = new Date(); 
     for (let i = 11; i >= 0; i--) {
         const d = new Date(baseDateForMonthly);
-        d.setDate(1); // Start of the month
+        d.setDate(1); 
         d.setMonth(baseDateForMonthly.getMonth() - i);
         last12MonthsKeys.push(format(d, 'yyyy-MM'));
         last12MonthLabels.push(format(d, 'MMM'));
@@ -201,7 +201,7 @@ const DashboardPage: NextPage = () => {
     const currentMonth = baseDateForQuarterly.getMonth(); 
     const currentQuarterNum = Math.floor(currentMonth / 3) + 1; 
 
-    for (let i = 3; i >= 0; i--) { // Iterate for the last 4 quarters including current
+    for (let i = 3; i >= 0; i--) { 
         let yearForQuarter = currentYear;
         let qNumForQuarterCalc = currentQuarterNum - i;
 
@@ -236,7 +236,7 @@ const DashboardPage: NextPage = () => {
     });
     const sortedProducts = Object.entries(productSales).sort(([, a], [, b]) => b - a).slice(0, 3);
     let maxProductRevenue = sortedProducts.length > 0 ? sortedProducts[0][1] : 0;
-    if (maxProductRevenue === 0 && sortedProducts.length > 0) maxProductRevenue = 1; // Avoid division by zero if all revenues are 0
+    if (maxProductRevenue === 0 && sortedProducts.length > 0) maxProductRevenue = 1; 
     
     setTopSellingProductsData(sortedProducts.map(([name, revenue]) => ({
       name,
@@ -266,11 +266,11 @@ const DashboardPage: NextPage = () => {
         return;
     }
     setLoadingLinks(true);
-    const { start: startDate } = getDateRange(); // Get current start date for filtering
+    const { start: startDate } = getDateRange(); 
     const paymentLinksQuery = query(
       collection(db, 'paymentLinks'), 
       where('userId', '==', user.uid),
-      where('creationDate', '>=', Timestamp.fromDate(startDate)) // Only fetch links relevant to the date range
+      where('creationDate', '>=', Timestamp.fromDate(startDate)) 
     );
 
     const unsubscribe = onSnapshot(paymentLinksQuery,
@@ -573,6 +573,3 @@ const DashboardPage: NextPage = () => {
 };
 
 export default DashboardPage;
-
-
-    
