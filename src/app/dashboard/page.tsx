@@ -2,19 +2,20 @@
 "use client";
 
 import type { NextPage } from 'next';
-import { ArrowUp, RefreshCw, Info, Loader2, PieChart as PieChartIcon } from 'lucide-react';
+import { ArrowUp, RefreshCw, Info, Loader2, PieChart as PieChartIcon, Calendar as CalendarIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, Pie, Cell, Legend, ResponsiveContainer } from 'recharts';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs, startOfDay, endOfDay, subDays, startOfYear, endOfYear, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -23,8 +24,7 @@ import { useToast } from '@/hooks/use-toast';
 interface StatCardData {
   title: string;
   value: string;
-  change?: string;
-  positiveChange?: boolean;
+  periodDescription?: string; // e.g., "Last Year", "Last 30 Days"
 }
 
 interface AggregatedProductData {
@@ -39,10 +39,12 @@ interface TransactionStatusData {
   fill: string;
 }
 
+type DateRangePreset = "last7" | "last30" | "last90" | "lastYear" | "allTime";
+
 const initialStatData: StatCardData[] = [
-  { title: 'Total Revenue', value: 'KES 0.00', change: 'N/A' },
-  { title: 'Total Completed Transactions', value: '0', change: 'N/A' },
-  { title: 'Active Payment Links', value: '0', change: 'N/A' },
+  { title: 'Total Revenue', value: 'KES 0.00', periodDescription: 'N/A' },
+  { title: 'Total Completed Transactions', value: '0', periodDescription: 'N/A' },
+  { title: 'Active Payment Links', value: '0', periodDescription: 'N/A' },
 ];
 
 const monthlyRevenueChartConfig = { revenue: { label: "Revenue", color: "hsl(var(--chart-1))" } } satisfies ChartConfig;
@@ -93,9 +95,28 @@ const DashboardPage: NextPage = () => {
   const [loadingLinks, setLoadingLinks] = useState(true);
   const [loadingTransactionsForStats, setLoadingTransactionsForStats] = useState(true);
 
+  const [selectedDateRangePreset, setSelectedDateRangePreset] = useState<DateRangePreset>("lastYear");
+
   const loadingStatsAndCharts = authLoading || !initialLoadComplete || loadingLinks || loadingTransactionsForStats;
 
-  // Fetch latest 5 transactions for the table (real-time)
+  const getDateRange = useCallback(() => {
+    const now = new Date();
+    switch (selectedDateRangePreset) {
+      case "last7":
+        return { start: startOfDay(subDays(now, 6)), end: endOfDay(now), description: "Last 7 Days" };
+      case "last30":
+        return { start: startOfDay(subDays(now, 29)), end: endOfDay(now), description: "Last 30 Days" };
+      case "last90":
+        return { start: startOfDay(subDays(now, 89)), end: endOfDay(now), description: "Last 90 Days" };
+      case "lastYear":
+        return { start: startOfYear(now), end: endOfYear(now), description: "This Year" };
+      case "allTime":
+      default:
+        return { start: new Date(0), end: endOfDay(now), description: "All Time" };
+    }
+  }, [selectedDateRangePreset]);
+
+
   useEffect(() => {
     if (!initialLoadComplete || !user) {
       setLoadingRecentTransactions(!initialLoadComplete || authLoading);
@@ -132,32 +153,33 @@ const DashboardPage: NextPage = () => {
   const processDashboardData = useCallback((transactions: Transaction[], paymentLinks: PaymentLink[]) => {
     if (!user) return;
 
+    const { description: currentPeriodDescription } = getDateRange();
     const completedTransactions = transactions.filter(txn => txn.status === 'Completed');
 
-    // --- Aggregate for Stat Cards ---
     let totalRevenue = 0;
     completedTransactions.forEach(txn => { totalRevenue += txn.amount; });
     const totalCompletedTransactionsCount = completedTransactions.length;
     const activePaymentLinksCount = paymentLinks.filter(link => link.status === 'Active').length;
 
     setStatData([
-      { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}`, change: 'N/A' },
-      { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toString(), change: 'N/A' },
-      { title: 'Active Payment Links', value: activePaymentLinksCount.toString(), change: 'N/A' },
+      { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}`, periodDescription: currentPeriodDescription },
+      { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toString(), periodDescription: currentPeriodDescription },
+      { title: 'Active Payment Links', value: activePaymentLinksCount.toString(), periodDescription: "Currently" },
     ]);
-
-    // --- Aggregate for Monthly Revenue Chart ---
+    
     const last12MonthsKeys: string[] = [];
     const last12MonthLabels: string[] = [];
+    const baseDateForMonthly = new Date(); // Use current date as base for "last 12 months"
     for (let i = 11; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(1);
-        d.setMonth(d.getMonth() - i);
+        const d = new Date(baseDateForMonthly);
+        d.setDate(1); // Start of the month
+        d.setMonth(baseDateForMonthly.getMonth() - i);
         last12MonthsKeys.push(format(d, 'yyyy-MM'));
         last12MonthLabels.push(format(d, 'MMM'));
     }
     const monthlyAgg: { [key: string]: number } = {};
     last12MonthsKeys.forEach(key => monthlyAgg[key] = 0);
+
     completedTransactions.forEach(txn => {
       if (txn.createdAt instanceof Timestamp) {
         const date = txn.createdAt.toDate();
@@ -172,23 +194,25 @@ const DashboardPage: NextPage = () => {
         revenue: monthlyAgg[key] || 0
     })));
 
-    // --- Aggregate for Quarterly Sales Chart ---
+
     const quarterlyAgg: { [key: string]: { sales: number; quarterLabel: string } } = {};
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth();
-    const currentQuarter = Math.floor(currentMonth / 3);
+    const baseDateForQuarterly = new Date();
+    const currentYear = baseDateForQuarterly.getFullYear();
+    const currentMonth = baseDateForQuarterly.getMonth(); 
+    const currentQuarterNum = Math.floor(currentMonth / 3) + 1; 
 
-    for (let i = 3; i >= 0; i--) {
+    for (let i = 3; i >= 0; i--) { // Iterate for the last 4 quarters including current
         let yearForQuarter = currentYear;
-        let qNumForQuarter = currentQuarter - i;
+        let qNumForQuarterCalc = currentQuarterNum - i;
 
-        if (qNumForQuarter < 0) {
-            qNumForQuarter += 4;
+        if (qNumForQuarterCalc <= 0) {
+            qNumForQuarterCalc += 4;
             yearForQuarter -=1;
         }
-        const quarterKey = `${yearForQuarter}-Q${qNumForQuarter + 1}`;
-        quarterlyAgg[quarterKey] = { sales: 0, quarterLabel: `Q${qNumForQuarter + 1} ${yearForQuarter}` };
+        const quarterKey = `${yearForQuarter}-Q${qNumForQuarterCalc}`;
+        quarterlyAgg[quarterKey] = { sales: 0, quarterLabel: `Q${qNumForQuarterCalc} '${String(yearForQuarter).slice(-2)}` };
     }
+    
     completedTransactions.forEach(txn => {
       if (txn.createdAt instanceof Timestamp) {
         const date = txn.createdAt.toDate();
@@ -202,7 +226,7 @@ const DashboardPage: NextPage = () => {
     });
     setQuarterlySalesData(Object.keys(quarterlyAgg).sort().map(key => ({ name: quarterlyAgg[key].quarterLabel.split(' ')[0], sales: quarterlyAgg[key].sales || 0 })));
 
-    // --- Aggregate for Top Selling Products Chart (based on Payment Link Name) ---
+
     const productSales: { [linkName: string]: number } = {};
     completedTransactions.forEach(txn => {
       const link = paymentLinks.find(pl => pl.id === txn.paymentLinkId);
@@ -212,15 +236,17 @@ const DashboardPage: NextPage = () => {
     });
     const sortedProducts = Object.entries(productSales).sort(([, a], [, b]) => b - a).slice(0, 3);
     let maxProductRevenue = sortedProducts.length > 0 ? sortedProducts[0][1] : 0;
+    if (maxProductRevenue === 0 && sortedProducts.length > 0) maxProductRevenue = 1; // Avoid division by zero if all revenues are 0
+    
     setTopSellingProductsData(sortedProducts.map(([name, revenue]) => ({
       name,
       value: maxProductRevenue > 0 ? (revenue / maxProductRevenue) * 100 : 0,
       displayValue: `KES ${revenue.toFixed(2)}`
     })));
 
-    // --- Aggregate for Transaction Status Pie Chart ---
+
     const statusCounts = { Completed: 0, Pending: 0, Failed: 0 };
-    transactions.forEach(txn => { // Use all transactions for status breakdown
+    transactions.forEach(txn => {
       if (txn.status === 'Completed') statusCounts.Completed++;
       else if (txn.status === 'Pending') statusCounts.Pending++;
       else if (txn.status === 'Failed') statusCounts.Failed++;
@@ -231,16 +257,22 @@ const DashboardPage: NextPage = () => {
       { name: 'Failed', value: statusCounts.Failed, fill: 'hsl(var(--chart-5))' },
     ].filter(d => d.value > 0));
 
-  }, [user, toast]); // Dependencies: user, toast (and other stable setters if not using useCallback properly)
+  }, [user, getDateRange]);
 
-  // Fetch Payment Links for dashboard
+
   useEffect(() => {
     if (!user || !initialLoadComplete) {
         setLoadingLinks(!initialLoadComplete || authLoading);
         return;
     }
     setLoadingLinks(true);
-    const paymentLinksQuery = query(collection(db, 'paymentLinks'), where('userId', '==', user.uid));
+    const { start: startDate } = getDateRange(); // Get current start date for filtering
+    const paymentLinksQuery = query(
+      collection(db, 'paymentLinks'), 
+      where('userId', '==', user.uid),
+      where('creationDate', '>=', Timestamp.fromDate(startDate)) // Only fetch links relevant to the date range
+    );
+
     const unsubscribe = onSnapshot(paymentLinksQuery,
       (linksSnapshot) => {
         const fetchedLinks: PaymentLink[] = [];
@@ -257,23 +289,22 @@ const DashboardPage: NextPage = () => {
       }
     );
     return () => unsubscribe();
-  }, [user, initialLoadComplete, authLoading, toast]);
+  }, [user, initialLoadComplete, authLoading, toast, getDateRange]);
 
-  // Fetch All Transactions (last year) for dashboard aggregations
+
   useEffect(() => {
     if (!user || !initialLoadComplete) {
         setLoadingTransactionsForStats(!initialLoadComplete || authLoading);
         return;
     }
     setLoadingTransactionsForStats(true);
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    const oneYearAgoTimestamp = Timestamp.fromDate(oneYearAgo);
+    const { start: startDate, end: endDate } = getDateRange();
 
     const allTransactionsQuery = query(
       collection(db, 'transactions'),
       where('userId', '==', user.uid),
-      where('createdAt', '>=', oneYearAgoTimestamp),
+      where('createdAt', '>=', Timestamp.fromDate(startDate)),
+      where('createdAt', '<=', Timestamp.fromDate(endDate)),
       orderBy('createdAt', 'asc')
     );
     const unsubscribe = onSnapshot(allTransactionsQuery,
@@ -292,14 +323,13 @@ const DashboardPage: NextPage = () => {
       }
     );
     return () => unsubscribe();
-  }, [user, initialLoadComplete, authLoading, toast]);
+  }, [user, initialLoadComplete, authLoading, toast, getDateRange]);
 
-  // Process data when both links and transactions for stats are loaded/updated
+
   useEffect(() => {
     if (authLoading || !initialLoadComplete || !user || loadingLinks || loadingTransactionsForStats) {
-      return; // Wait until all necessary data is loaded and user is authenticated
+      return; 
     }
-    // This will run once both initial loads are done, and subsequently if either dataset changes
     processDashboardData(allUserTransactionsData, userPaymentLinks);
   }, [allUserTransactionsData, userPaymentLinks, user, initialLoadComplete, authLoading, loadingLinks, loadingTransactionsForStats, processDashboardData]);
 
@@ -323,21 +353,39 @@ const DashboardPage: NextPage = () => {
     return format(date, 'yyyy-MM-dd');
   };
 
-  const currentTopProductInfo = useMemo(() => topSellingProductsData.length > 0
-    ? { name: topSellingProductsData[0].name, change: "" } // Change calculation not implemented here
-    : { name: "N/A", change: "N/A" }, [topSellingProductsData]);
+  const currentTopProductInfo = useMemo(() => {
+    if (topSellingProductsData.length > 0) {
+      return { name: topSellingProductsData[0].name, displayValue: topSellingProductsData[0].displayValue };
+    }
+    return { name: "N/A", displayValue: "N/A" };
+  }, [topSellingProductsData]);
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
             <h1 className="text-[32px] font-bold tracking-light text-foreground">Dashboard</h1>
             <p className="text-muted-foreground text-sm">Overview of your business performance</p>
         </div>
-        <Button onClick={handleRefreshAllData} disabled={loadingStatsAndCharts}>
-            <RefreshCw className={cn("mr-2 h-4 w-4", loadingStatsAndCharts && "animate-spin")} />
-            {loadingStatsAndCharts ? "Loading Analytics..." : "Refresh Data"}
-        </Button>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Select value={selectedDateRangePreset} onValueChange={(value) => setSelectedDateRangePreset(value as DateRangePreset)}>
+                <SelectTrigger className="w-full sm:w-[180px] h-10 bg-secondary border-border">
+                    <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <SelectValue placeholder="Select date range" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="last7">Last 7 Days</SelectItem>
+                    <SelectItem value="last30">Last 30 Days</SelectItem>
+                    <SelectItem value="last90">Last 90 Days</SelectItem>
+                    <SelectItem value="lastYear">This Year</SelectItem>
+                    <SelectItem value="allTime">All Time</SelectItem>
+                </SelectContent>
+            </Select>
+            <Button onClick={handleRefreshAllData} disabled={loadingStatsAndCharts} className="h-10">
+                <RefreshCw className={cn("mr-2 h-4 w-4", loadingStatsAndCharts && "animate-spin")} />
+                {loadingStatsAndCharts ? "Loading..." : "Refresh"}
+            </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -353,11 +401,10 @@ const DashboardPage: NextPage = () => {
                 <CardDescription className="text-base font-medium text-foreground">{stat.title}</CardDescription>
                 <CardTitle className="text-2xl font-bold tracking-light">{stat.value}</CardTitle>
             </CardHeader>
-            {stat.change && (
+            {stat.periodDescription && (
                  <CardContent className="p-6 pt-0">
-                    <div className={`text-base font-medium ${stat.positiveChange === undefined ? 'text-muted-foreground' : stat.positiveChange ? 'text-green-600' : 'text-destructive'} flex items-center`}>
-                        {stat.positiveChange && <ArrowUp className="h-4 w-4 mr-1" />}
-                        {stat.change}
+                    <div className={`text-sm font-normal text-muted-foreground flex items-center`}>
+                        {stat.periodDescription}
                     </div>
                 </CardContent>
             )}
@@ -412,8 +459,7 @@ const DashboardPage: NextPage = () => {
                 <CardTitle className="text-base font-medium text-foreground">Monthly Revenue</CardTitle>
                 {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{statData[0].value}</CardDescription>}
                 <div className="flex gap-1 pt-1">
-                    <p className="text-base text-muted-foreground font-normal">Last 12 Months</p>
-                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : statData[0].change && <p className={`text-base font-medium ${statData[0].positiveChange ? 'text-green-600' : 'text-muted-foreground'}`}>{statData[0].change}</p>}
+                    <p className="text-base text-muted-foreground font-normal">{statData[0].periodDescription === "This Year" ? "Last 12 Months" : statData[0].periodDescription}</p>
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
@@ -440,8 +486,7 @@ const DashboardPage: NextPage = () => {
                 <CardTitle className="text-base font-medium text-foreground">Quarterly Sales</CardTitle>
                 {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{statData[0].value}</CardDescription> }
                 <div className="flex gap-1 pt-1">
-                    <p className="text-base text-muted-foreground font-normal">Last 4 Quarters</p>
-                    {loadingStatsAndCharts ? <Skeleton className="h-5 w-12" /> : statData[0].change && <p className={`text-base font-medium ${statData[0].positiveChange ? 'text-green-600' : 'text-muted-foreground'}`}>{statData[0].change}</p>}
+                    <p className="text-base text-muted-foreground font-normal">{statData[0].periodDescription === "This Year" ? "Last 4 Quarters" : statData[0].periodDescription}</p>
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
@@ -468,8 +513,7 @@ const DashboardPage: NextPage = () => {
                 <CardTitle className="text-base font-medium text-foreground">Top Selling Payment Links</CardTitle>
                 {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{currentTopProductInfo.name}</CardDescription>}
                 <div className="flex gap-1 pt-1">
-                    <p className="text-base text-muted-foreground font-normal">By Revenue (Last Year)</p>
-                    {/* Percentage change for top product not implemented here */}
+                    <p className="text-base text-muted-foreground font-normal">By Revenue ({getDateRange().description})</p>
                 </div>
             </CardHeader>
             <CardContent className="p-6 pt-2 min-h-[210px]">
@@ -498,7 +542,7 @@ const DashboardPage: NextPage = () => {
               <CardTitle className="text-base font-medium text-foreground">Transaction Status Breakdown</CardTitle>
               {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{allUserTransactionsData.length} Total</CardDescription>}
               <div className="flex gap-1 pt-1">
-                    <p className="text-base text-muted-foreground font-normal">Last Year</p>
+                    <p className="text-base text-muted-foreground font-normal">{getDateRange().description}</p>
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
@@ -530,3 +574,5 @@ const DashboardPage: NextPage = () => {
 
 export default DashboardPage;
 
+
+    

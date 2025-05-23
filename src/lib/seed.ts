@@ -3,7 +3,7 @@
 
 import { faker } from '@faker-js/faker';
 import { db } from './firebase';
-import { collection, writeBatch, getDocs, query, where, doc, Timestamp } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, where, doc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import type { PaymentLink, PayoutAccount, Transaction } from './types';
 
 const kenyanFirstNames = ['John', 'Peter', 'James', 'Mary', 'Jane', 'Grace', 'David', 'Paul', 'Esther', 'Joseph', 'Samuel', 'Ann', 'Daniel', 'Sarah', 'Michael', 'Ruth', 'Alice', 'Robert', 'Lucy', 'George'];
@@ -28,15 +28,36 @@ interface SeededPaymentLinkInfo {
   id: string;
   amount: number;
   currency: string;
-  creationDate: Date; // JS Date for faker usage
+  creationDate: Date; 
+  creatorUserId: string;
 }
+
+const MAX_BATCH_OPERATIONS = 490; // Firestore batch limit is 500
+
+async function commitBatchInChunks(operations: ((batch: ReturnType<typeof writeBatch>) => void)[]) {
+  let currentBatch = writeBatch(db);
+  let operationCount = 0;
+
+  for (const operation of operations) {
+    operation(currentBatch);
+    operationCount++;
+    if (operationCount >= MAX_BATCH_OPERATIONS) {
+      await currentBatch.commit();
+      currentBatch = writeBatch(db);
+      operationCount = 0;
+    }
+  }
+
+  if (operationCount > 0) {
+    await currentBatch.commit();
+  }
+}
+
 
 export async function clearExistingData(userId: string) {
   console.log(`[Seed] Starting to clear data for user: ${userId}`);
   const collectionsToClear = ['paymentLinks', 'transactions', 'payoutAccounts'];
-  const batch = writeBatch(db);
-  let totalCleared = 0;
-
+  
   for (const collectionName of collectionsToClear) {
     console.log(`[Seed] Preparing to clear existing ${collectionName} for user ${userId}...`);
     const q = query(collection(db, collectionName), where("userId", "==", userId));
@@ -45,17 +66,13 @@ export async function clearExistingData(userId: string) {
       console.log(`[Seed] No documents found in ${collectionName} for user ${userId} to delete.`);
       continue;
     }
-    snapshot.docs.forEach(docSnap => batch.delete(docSnap.ref));
-    console.log(`[Seed] Added ${snapshot.size} documents from ${collectionName} to delete batch.`);
-    totalCleared += snapshot.size;
+    const deleteOps: ((batch: ReturnType<typeof writeBatch>) => void)[] = [];
+    snapshot.docs.forEach(docSnap => deleteOps.push(batch => batch.delete(docSnap.ref)));
+    
+    await commitBatchInChunks(deleteOps);
+    console.log(`[Seed] Cleared ${snapshot.size} documents from ${collectionName}.`);
   }
-
-  if (totalCleared > 0) {
-    await batch.commit();
-    console.log(`[Seed] Cleared ${totalCleared} total documents for user ${userId}.`);
-  } else {
-    console.log(`[Seed] No existing data found to clear for user ${userId}.`);
-  }
+  console.log(`[Seed] Finished clearing existing data for user ${userId}.`);
 }
 
 
@@ -67,13 +84,10 @@ export async function seedFirestoreData(userId: string, counts: SeedCounts) {
   console.log("[Seed] Starting data seeding process...");
   await clearExistingData(userId);
 
-  const batch = writeBatch(db);
-  const seededPaymentLinksInfo: SeededPaymentLinkInfo[] = [];
-
-  // 1. Seed Payout Accounts
-  console.log(`[Seed] Seeding ${counts.mpesaPayoutAccounts} M-Pesa Payout Accounts and ${counts.bankPayoutAccounts} Bank Payout Accounts...`);
+  const payoutAccountOps: ((batch: ReturnType<typeof writeBatch>) => void)[] = [];
   const payoutAccountIds: string[] = [];
 
+  console.log(`[Seed] Preparing ${counts.mpesaPayoutAccounts} M-Pesa Payout Accounts and ${counts.bankPayoutAccounts} Bank Payout Accounts...`);
   for (let i = 0; i < counts.mpesaPayoutAccounts; i++) {
     const mpesaAccountRef = doc(collection(db, 'payoutAccounts'));
     payoutAccountIds.push(mpesaAccountRef.id);
@@ -87,7 +101,7 @@ export async function seedFirestoreData(userId: string, counts: SeedCounts) {
       createdAt: Timestamp.fromDate(faker.date.past({ years: 1 })),
       updatedAt: Timestamp.fromDate(faker.date.recent({ days: 30 })),
     };
-    batch.set(mpesaAccountRef, newMpesaAccount);
+    payoutAccountOps.push(batch => batch.set(mpesaAccountRef, newMpesaAccount));
   }
 
   for (let i = 0; i < counts.bankPayoutAccounts; i++) {
@@ -106,12 +120,18 @@ export async function seedFirestoreData(userId: string, counts: SeedCounts) {
       createdAt: Timestamp.fromDate(faker.date.past({ years: 1 })),
       updatedAt: Timestamp.fromDate(faker.date.recent({ days: 30 })),
     };
-    batch.set(bankAccountRef, newBankAccount);
+    payoutAccountOps.push(batch => batch.set(bankAccountRef, newBankAccount));
   }
-  console.log(`[Seed] Added ${payoutAccountIds.length} payout accounts to batch.`);
+  if (payoutAccountOps.length > 0) {
+    console.log(`[Seed] Committing ${payoutAccountOps.length} payout account operations...`);
+    await commitBatchInChunks(payoutAccountOps);
+  }
 
-  // 2. Seed Payment Links
-  console.log(`[Seed] Seeding ${counts.paymentLinks} Payment Links...`);
+
+  const paymentLinkOps: ((batch: ReturnType<typeof writeBatch>) => void)[] = [];
+  const seededPaymentLinksInfo: SeededPaymentLinkInfo[] = [];
+
+  console.log(`[Seed] Preparing ${counts.paymentLinks} Payment Links...`);
   for (let i = 0; i < counts.paymentLinks; i++) {
     const paymentLinkRef = doc(collection(db, 'paymentLinks'));
     const jsCreationDate = faker.date.past({ years: 1 });
@@ -123,10 +143,11 @@ export async function seedFirestoreData(userId: string, counts: SeedCounts) {
     }
 
     const amount = parseFloat(faker.finance.amount({ min: 50, max: 10000, dec: 2 }));
-    const selectedPayoutAccountId = payoutAccountIds.length > 0 ? faker.helpers.arrayElement(payoutAccountIds) : "default_payout_id"; // Fallback if no payout accounts seeded
+    const selectedPayoutAccountId = payoutAccountIds.length > 0 ? faker.helpers.arrayElement(payoutAccountIds) : "default_payout_id";
 
     const newPaymentLink: Omit<PaymentLink, 'id'> = {
       userId,
+      creatorUserId: userId, 
       linkName: faker.commerce.productName() + ` Invoice #${faker.string.alphanumeric(4).toUpperCase()}`,
       reference: `INV-${faker.string.alphanumeric({ length: 8, casing: 'upper' })}`,
       amount: amount,
@@ -140,31 +161,31 @@ export async function seedFirestoreData(userId: string, counts: SeedCounts) {
       hasExpiry: hasExpiry,
       updatedAt: Timestamp.fromDate(faker.date.recent({ days: 30, refDate: jsCreationDate })),
     };
-    batch.set(paymentLinkRef, newPaymentLink);
+    paymentLinkOps.push(batch => batch.set(paymentLinkRef, newPaymentLink));
     seededPaymentLinksInfo.push({
       id: paymentLinkRef.id,
       amount: newPaymentLink.amount,
       currency: newPaymentLink.currency,
-      creationDate: jsCreationDate // Store JS Date for faker
+      creationDate: jsCreationDate,
+      creatorUserId: userId
     });
   }
-  console.log(`[Seed] Added ${seededPaymentLinksInfo.length} payment links to batch.`);
+   if (paymentLinkOps.length > 0) {
+    console.log(`[Seed] Committing ${paymentLinkOps.length} payment link operations...`);
+    await commitBatchInChunks(paymentLinkOps);
+  }
 
-  // 3. Seed Transactions
-  console.log(`[Seed] Seeding Transactions (${counts.transactionsPerLink} per link)...`);
-  let transactionsAdded = 0;
+
+  const transactionOps: ((batch: ReturnType<typeof writeBatch>) => void)[] = [];
+  console.log(`[Seed] Preparing Transactions (${counts.transactionsPerLink} per link)...`);
   for (const linkInfo of seededPaymentLinksInfo) {
-    if (!linkInfo.creationDate) {
-        console.warn(`[Seed] Payment link info for ID ${linkInfo.id} missing creationDate. Skipping transactions.`);
-        continue;
-    }
     for (let j = 0; j < counts.transactionsPerLink; j++) {
       const transactionRef = doc(collection(db, 'transactions'));
-      const transactionDate = faker.date.between({ from: linkInfo.creationDate, to: new Date() }); // Use JS Date from linkInfo
+      const transactionDate = faker.date.between({ from: linkInfo.creationDate, to: new Date() });
       const newTransaction: Omit<Transaction, 'id'> = {
-        userId,
+        userId: linkInfo.creatorUserId,
         paymentLinkId: linkInfo.id,
-        date: Timestamp.fromDate(transactionDate),
+        date: Timestamp.fromDate(transactionDate), 
         customer: getKenyanName(),
         amount: linkInfo.amount,
         currency: linkInfo.currency,
@@ -173,12 +194,16 @@ export async function seedFirestoreData(userId: string, counts: SeedCounts) {
         method: faker.helpers.arrayElement(['mpesa_stk', 'mpesa_paybill', 'card']),
         createdAt: Timestamp.fromDate(transactionDate),
       };
-      batch.set(transactionRef, newTransaction);
-      transactionsAdded++;
+      transactionOps.push(batch => batch.set(transactionRef, newTransaction));
     }
   }
-  console.log(`[Seed] Added ${transactionsAdded} transactions to batch.`);
+  if (transactionOps.length > 0) {
+    console.log(`[Seed] Committing ${transactionOps.length} transaction operations...`);
+    await commitBatchInChunks(transactionOps);
+  }
 
-  await batch.commit();
-  console.log("[Seed] Data seeding process complete! Batch committed.");
+  console.log("[Seed] Data seeding process complete!");
 }
+
+
+    

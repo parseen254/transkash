@@ -7,9 +7,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { useEffect, useState, useRef } from 'react';
-import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, writeBatch } from 'firebase/firestore'; // Added collection, query, where, getDocs, writeBatch
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { updateProfile, updateEmail, sendEmailVerification } from 'firebase/auth';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { DatabaseZap, Trash2 } from 'lucide-react'; // Added icons
 
 import { db, auth, storage } from '@/lib/firebase';
 import { useAuth } from '@/contexts/auth-context';
@@ -28,8 +29,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { ThemePreference, UserProfile } from '@/lib/types';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SeedDataDialog } from '@/components/dashboard/seed-data-dialog'; // Import SeedDataDialog
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"; // Import AlertDialog components
+import { SeedDataDialog } from '@/components/dashboard/seed-data-dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 const personalInfoSchema = z.object({
   firstName: z.string().min(1, { message: 'First name is required.' }),
@@ -58,7 +59,7 @@ const ProfileSettingsPage: NextPage = () => {
   const [isFetchingData, setIsFetchingData] = useState(true);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isSeedDialogOpen, setIsSeedDialogOpen] = useState(false);
@@ -107,16 +108,16 @@ const ProfileSettingsPage: NextPage = () => {
             businessAddress: userData.businessAddress || '',
             businessWebsite: userData.businessWebsite || '',
           });
-          if (userData.photoURL) {
-            setAvatarPreview(userData.photoURL);
-          } else if (user.photoURL) {
-            setAvatarPreview(user.photoURL);
+          const currentPhotoURL = userData.photoURL || user.photoURL;
+          if (currentPhotoURL) {
+            setAvatarPreview(currentPhotoURL);
           }
         } else {
           personalForm.reset({
             firstName: user.displayName?.split(' ')[0] || '',
             lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
             email: user.email || '',
+            personalPhone: '',
           });
            if (user.photoURL) {
             setAvatarPreview(user.photoURL);
@@ -129,7 +130,6 @@ const ProfileSettingsPage: NextPage = () => {
         router.push('/login');
         setIsFetchingData(false);
     } else if (!authLoading && !initialLoadComplete && !user) {
-      // Handles the case where auth is done loading, but no user, and initialLoad wasn't complete yet
       setIsFetchingData(false);
     }
   }, [user, authLoading, initialLoadComplete, personalForm, businessForm, router]);
@@ -147,17 +147,17 @@ const ProfileSettingsPage: NextPage = () => {
       toast({ title: "Error", description: "You are not logged in.", variant: "destructive" });
       return;
     }
-    setIsUploading(true);
+    setIsUploadingAvatar(true); // Using this for general personal info save state too
 
     try {
-      let newPhotoURL = avatarPreview || user.photoURL; 
+      let finalPhotoURL = avatarPreview || user.photoURL; // Start with current or existing auth photoURL
       
       if (avatarFile) {
         const imageRef = storageRef(storage, `user-avatars/${user.uid}/${avatarFile.name}`);
         await uploadBytes(imageRef, avatarFile);
-        newPhotoURL = await getDownloadURL(imageRef);
-        setAvatarPreview(newPhotoURL); // Update preview with final URL
-        setAvatarFile(null); // Clear the file
+        finalPhotoURL = await getDownloadURL(imageRef);
+        setAvatarPreview(finalPhotoURL); 
+        setAvatarFile(null); 
       }
 
       const userDocRef = doc(db, "users", user.uid);
@@ -166,7 +166,7 @@ const ProfileSettingsPage: NextPage = () => {
         lastName: data.lastName,
         email: data.email,
         personalPhone: data.personalPhone || '',
-        photoURL: newPhotoURL,
+        photoURL: finalPhotoURL,
         displayName: `${data.firstName} ${data.lastName}`,
         updatedAt: serverTimestamp(),
       };
@@ -175,10 +175,16 @@ const ProfileSettingsPage: NextPage = () => {
 
       const currentAuthUser = auth.currentUser;
       if (currentAuthUser) {
-        await updateProfile(currentAuthUser, {
-          displayName: `${data.firstName} ${data.lastName}`,
-          photoURL: newPhotoURL,
-        });
+        const authProfileUpdates: { displayName?: string; photoURL?: string | null } = {};
+        if (currentAuthUser.displayName !== profileDataToSave.displayName) {
+            authProfileUpdates.displayName = profileDataToSave.displayName;
+        }
+        if (finalPhotoURL && currentAuthUser.photoURL !== finalPhotoURL) {
+            authProfileUpdates.photoURL = finalPhotoURL;
+        }
+        if (Object.keys(authProfileUpdates).length > 0) {
+            await updateProfile(currentAuthUser, authProfileUpdates);
+        }
         
         if (currentAuthUser.email !== data.email) {
           try {
@@ -213,7 +219,7 @@ const ProfileSettingsPage: NextPage = () => {
         variant: "destructive",
       });
     } finally {
-      setIsUploading(false);
+      setIsUploadingAvatar(false);
     }
   };
 
@@ -288,14 +294,23 @@ const ProfileSettingsPage: NextPage = () => {
     return (
       <div className="space-y-6">
         <div><Skeleton className="h-9 w-1/3 mb-1" /><Skeleton className="h-5 w-1/2" /></div>
-        <Skeleton className="h-10 w-full rounded-md" /> 
-        <Card><CardHeader><Skeleton className="h-7 w-1/4 mb-1" /><Skeleton className="h-4 w-2/5" /></CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center gap-4"><Skeleton className="h-20 w-20 rounded-full" /><Skeleton className="h-10 w-32" /></div>
-            {[...Array(3)].map((_, i) => (<div key={i} className="space-y-2"><Skeleton className="h-5 w-1/4" /><Skeleton className="h-10 w-full" /></div>))}
-            <div className="flex justify-end"><Skeleton className="h-10 w-32" /></div>
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="personal" className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="personal">Personal</TabsTrigger>
+            <TabsTrigger value="business">Business</TabsTrigger>
+            <TabsTrigger value="appearance">Appearance</TabsTrigger>
+            <TabsTrigger value="data">Data Management</TabsTrigger>
+          </TabsList>
+          <TabsContent value="personal">
+            <Card><CardHeader><Skeleton className="h-7 w-1/4 mb-1" /><Skeleton className="h-4 w-2/5" /></CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center gap-6"><Skeleton className="h-24 w-24 rounded-full" /><Skeleton className="h-10 w-32" /></div>
+                {[...Array(3)].map((_, i) => (<div key={i} className="space-y-2"><Skeleton className="h-5 w-1/4" /><Skeleton className="h-10 w-full" /></div>))}
+                <div className="flex justify-end"><Skeleton className="h-10 w-32" /></div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     );
   }
@@ -304,13 +319,17 @@ const ProfileSettingsPage: NextPage = () => {
      return (<div className="space-y-6"><p>Please log in to view your settings.</p><Button onClick={() => router.push('/login')}>Go to Login</Button></div>);
   }
 
-  const getInitials = (name: string | null | undefined) => {
-    if (!name) return 'U';
-    const parts = name.split(' ');
-    if (parts.length > 1 && parts[0] && parts[parts.length - 1]) {
-      return parts[0][0].toUpperCase() + parts[parts.length - 1][0].toUpperCase();
+  const getInitials = (firstName?: string, lastName?: string) => {
+    if (firstName && lastName) return (firstName[0] + lastName[0]).toUpperCase();
+    if (firstName) return firstName[0].toUpperCase();
+    if (user?.displayName) {
+      const parts = user.displayName.split(' ');
+      if (parts.length > 1 && parts[0] && parts[parts.length - 1]) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return user.displayName[0]?.toUpperCase() || 'U';
     }
-    return name[0]?.toUpperCase() || 'U';
+    return 'U';
   };
 
   return (
@@ -340,12 +359,12 @@ const ProfileSettingsPage: NextPage = () => {
                   <div className="flex flex-col sm:flex-row items-center gap-6">
                     <div className="relative">
                       <Avatar className="h-24 w-24 text-3xl">
-                        <AvatarImage src={avatarPreview || undefined} alt={user?.displayName || 'User'} data-ai-hint="user avatar" />
-                        <AvatarFallback>{user ? getInitials(user.displayName) : 'U'}</AvatarFallback>
+                        <AvatarImage src={avatarPreview || undefined} alt={personalForm.getValues('firstName') || user?.displayName || 'User'} data-ai-hint="user avatar" />
+                        <AvatarFallback>{getInitials(personalForm.getValues('firstName'), personalForm.getValues('lastName'))}</AvatarFallback>
                       </Avatar>
-                      {isUploading && <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full"><Spinner className="text-white" /></div>}
+                      {isUploadingAvatar && <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full"><Spinner className="text-white" /></div>}
                     </div>
-                    <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                    <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploadingAvatar}>
                       Change Avatar
                     </Button>
                     <Input
@@ -354,7 +373,7 @@ const ProfileSettingsPage: NextPage = () => {
                       onChange={handleAvatarChange}
                       accept="image/png, image/jpeg, image/gif"
                       className="hidden"
-                      disabled={isUploading}
+                      disabled={isUploadingAvatar}
                     />
                   </div>
 
@@ -379,12 +398,13 @@ const ProfileSettingsPage: NextPage = () => {
                       className={`bg-muted cursor-not-allowed ${user?.emailVerified ? 'text-green-600' : 'text-orange-600'}`} />
                     {!user?.emailVerified && (<p className="text-sm text-muted-foreground">Your email is not verified.</p>)}
                   </FormItem>
-                  <div className="flex justify-end">
-                    <Button type="submit" disabled={personalForm.formState.isSubmitting || isUploading}>
-                      {personalForm.formState.isSubmitting || isUploading ? (<><Spinner className="mr-2 h-4 w-4" /> Saving...</>) : 'Save Personal Info'}
-                    </Button>
-                  </div>
+                  
                 </CardContent>
+                 <CardFooter className="flex justify-end">
+                    <Button type="submit" disabled={personalForm.formState.isSubmitting || isUploadingAvatar}>
+                      {personalForm.formState.isSubmitting || isUploadingAvatar ? (<><Spinner className="mr-2 h-4 w-4" /> Saving...</>) : 'Save Personal Info'}
+                    </Button>
+                  </CardFooter>
               </Card>
             </form>
           </Form>
@@ -414,12 +434,12 @@ const ProfileSettingsPage: NextPage = () => {
                   <FormField control={businessForm.control} name="businessWebsite" render={({ field }) => (
                     <FormItem><FormLabel>Business Website</FormLabel><FormControl><Input placeholder="https://yourcompany.com" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
-                  <div className="flex justify-end">
+                </CardContent>
+                <CardFooter className="flex justify-end">
                     <Button type="submit" disabled={businessForm.formState.isSubmitting}>
                       {businessForm.formState.isSubmitting ? (<><Spinner className="mr-2 h-4 w-4" /> Saving...</>) : 'Save Business Info'}
                     </Button>
-                  </div>
-                </CardContent>
+                  </CardFooter>
               </Card>
             </form>
           </Form>
@@ -456,7 +476,7 @@ const ProfileSettingsPage: NextPage = () => {
                   This will clear existing payment links, transactions, and payout accounts for your user.
                 </p>
                 <Button onClick={() => setIsSeedDialogOpen(true)} variant="outline">
-                  Seed Dummy Data
+                  <DatabaseZap className="mr-2 h-4 w-4" /> Seed Dummy Data
                 </Button>
               </div>
               <hr/>
@@ -468,7 +488,7 @@ const ProfileSettingsPage: NextPage = () => {
                 </p>
                 <AlertDialog open={isResetDataAlertOpen} onOpenChange={setIsResetDataAlertOpen}>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive">Reset All My Data</Button>
+                    <Button variant="destructive"><Trash2 className="mr-2 h-4 w-4" /> Reset All My Data</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
@@ -497,4 +517,6 @@ const ProfileSettingsPage: NextPage = () => {
 };
 
 export default ProfileSettingsPage;
+    
+
     
