@@ -8,14 +8,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, Pie, Cell, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, Pie, PieChart, Cell, Legend, ResponsiveContainer } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { format, parseISO, startOfDay, endOfDay, subDays, startOfYear, endOfYear, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'date-fns';
+import { format, startOfDay, endOfDay, subDays, startOfYear, endOfYear, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -92,12 +92,13 @@ const DashboardPage: NextPage = () => {
   
   const [userPaymentLinks, setUserPaymentLinks] = useState<PaymentLink[]>([]);
   const [allUserTransactionsData, setAllUserTransactionsData] = useState<Transaction[]>([]);
+  
   const [loadingLinks, setLoadingLinks] = useState(true);
-  const [loadingTransactionsForStats, setLoadingTransactionsForStats] = useState(true);
+  const [loadingTransactionsData, setLoadingTransactionsData] = useState(true);
 
   const [selectedDateRangePreset, setSelectedDateRangePreset] = useState<DateRangePreset>("lastYear");
 
-  const loadingStatsAndCharts = authLoading || !initialLoadComplete || loadingLinks || loadingTransactionsForStats;
+  const loadingStatsAndCharts = authLoading || !initialLoadComplete || loadingLinks || loadingTransactionsData;
 
   const getDateRange = useCallback(() => {
     const now = new Date();
@@ -112,6 +113,8 @@ const DashboardPage: NextPage = () => {
         return { start: startOfYear(now), end: endOfYear(now), description: "This Year" };
       case "allTime":
       default:
+        // For "All Time", we might want to avoid querying literally *all* data
+        // if performance is a concern. For now, let's use a very early date.
         return { start: new Date(0), end: endOfDay(now), description: "All Time" };
     }
   }, [selectedDateRangePreset]);
@@ -167,6 +170,7 @@ const DashboardPage: NextPage = () => {
       { title: 'Active Payment Links', value: activePaymentLinksCount.toString(), periodDescription: "Currently" },
     ]);
     
+    // Monthly Revenue (Last 12 Months regardless of selectedDateRangePreset for this chart)
     const last12MonthsKeys: string[] = [];
     const last12MonthLabels: string[] = [];
     const baseDateForMonthly = new Date(); 
@@ -194,7 +198,7 @@ const DashboardPage: NextPage = () => {
         revenue: monthlyAgg[key] || 0
     })));
 
-
+    // Quarterly Sales (Last 4 Quarters regardless of selectedDateRangePreset for this chart)
     const quarterlyAgg: { [key: string]: { sales: number; quarterLabel: string } } = {};
     const baseDateForQuarterly = new Date();
     const currentYear = baseDateForQuarterly.getFullYear();
@@ -227,6 +231,7 @@ const DashboardPage: NextPage = () => {
     setQuarterlySalesData(Object.keys(quarterlyAgg).sort().map(key => ({ name: quarterlyAgg[key].quarterLabel.split(' ')[0], sales: quarterlyAgg[key].sales || 0 })));
 
 
+    // Top Selling Payment Links (based on selected date range)
     const productSales: { [linkName: string]: number } = {};
     completedTransactions.forEach(txn => {
       const link = paymentLinks.find(pl => pl.id === txn.paymentLinkId);
@@ -240,11 +245,11 @@ const DashboardPage: NextPage = () => {
     
     setTopSellingProductsData(sortedProducts.map(([name, revenue]) => ({
       name,
-      value: maxProductRevenue > 0 ? (revenue / maxProductRevenue) * 100 : 0,
+      value: maxProductRevenue > 0 ? (revenue / maxProductRevenue) * 100 : 0, // Percentage for progress bar
       displayValue: `KES ${revenue.toFixed(2)}`
     })));
 
-
+    // Transaction Status Breakdown (based on selected date range)
     const statusCounts = { Completed: 0, Pending: 0, Failed: 0 };
     transactions.forEach(txn => {
       if (txn.status === 'Completed') statusCounts.Completed++;
@@ -255,25 +260,35 @@ const DashboardPage: NextPage = () => {
       { name: 'Completed', value: statusCounts.Completed, fill: 'hsl(var(--chart-1))' },
       { name: 'Pending', value: statusCounts.Pending, fill: 'hsl(var(--chart-3))' },
       { name: 'Failed', value: statusCounts.Failed, fill: 'hsl(var(--chart-5))' },
-    ].filter(d => d.value > 0));
+    ].filter(d => d.value > 0)); // Only include statuses with actual counts
 
   }, [user, getDateRange]);
 
 
+  // Effect to fetch data for stats and charts, re-runs when user or date range changes
   useEffect(() => {
     if (!user || !initialLoadComplete) {
         setLoadingLinks(!initialLoadComplete || authLoading);
+        setLoadingTransactionsData(!initialLoadComplete || authLoading);
         return;
     }
+
+    const { start: startDate, end: endDate } = getDateRange();
+    let unsubscribeLinks: () => void = () => {};
+    let unsubscribeTransactions: () => void = () => {};
+
+    // Fetch Payment Links
     setLoadingLinks(true);
-    const { start: startDate } = getDateRange(); 
     const paymentLinksQuery = query(
       collection(db, 'paymentLinks'), 
       where('userId', '==', user.uid),
-      where('creationDate', '>=', Timestamp.fromDate(startDate)) 
+      // For "Active Links" count, we need all active links, not just those created in the range
+      // However, for "Top Selling Links" chart, it makes sense to filter links by creation date or transactions within range.
+      // For simplicity now, we'll fetch all user links for the "Active Links" count.
+      // And transactions within range will determine "Top Selling Links".
+      orderBy('creationDate', 'desc') 
     );
-
-    const unsubscribe = onSnapshot(paymentLinksQuery,
+    unsubscribeLinks = onSnapshot(paymentLinksQuery,
       (linksSnapshot) => {
         const fetchedLinks: PaymentLink[] = [];
         linksSnapshot.forEach(doc => {
@@ -288,54 +303,51 @@ const DashboardPage: NextPage = () => {
         setLoadingLinks(false);
       }
     );
-    return () => unsubscribe();
-  }, [user, initialLoadComplete, authLoading, toast, getDateRange]);
 
-
-  useEffect(() => {
-    if (!user || !initialLoadComplete) {
-        setLoadingTransactionsForStats(!initialLoadComplete || authLoading);
-        return;
-    }
-    setLoadingTransactionsForStats(true);
-    const { start: startDate, end: endDate } = getDateRange();
-
+    // Fetch Transactions for the selected date range
+    setLoadingTransactionsData(true);
     const allTransactionsQuery = query(
       collection(db, 'transactions'),
       where('userId', '==', user.uid),
       where('createdAt', '>=', Timestamp.fromDate(startDate)),
       where('createdAt', '<=', Timestamp.fromDate(endDate)),
-      orderBy('createdAt', 'asc')
+      orderBy('createdAt', 'asc') // Fetch in ascending order for easier processing later if needed
     );
-    const unsubscribe = onSnapshot(allTransactionsQuery,
+    unsubscribeTransactions = onSnapshot(allTransactionsQuery,
       (transactionsSnapshot) => {
         const fetchedTxns: Transaction[] = [];
         transactionsSnapshot.forEach(doc => {
           fetchedTxns.push({ id: doc.id, ...doc.data() } as Transaction);
         });
         setAllUserTransactionsData(fetchedTxns);
-        setLoadingTransactionsForStats(false);
+        setLoadingTransactionsData(false);
       },
       (error) => {
         console.error("Error fetching transactions for dashboard stats:", error);
         toast({ title: "Error", description: "Could not load transaction data for stats.", variant: "destructive" });
-        setLoadingTransactionsForStats(false);
+        setLoadingTransactionsData(false);
       }
     );
-    return () => unsubscribe();
+
+    return () => {
+        unsubscribeLinks();
+        unsubscribeTransactions();
+    };
   }, [user, initialLoadComplete, authLoading, toast, getDateRange]);
 
-
+  // Effect to process data when fetched data changes or initial load completes
   useEffect(() => {
-    if (authLoading || !initialLoadComplete || !user || loadingLinks || loadingTransactionsForStats) {
+    if (authLoading || !initialLoadComplete || !user || loadingLinks || loadingTransactionsData) {
       return; 
     }
     processDashboardData(allUserTransactionsData, userPaymentLinks);
-  }, [allUserTransactionsData, userPaymentLinks, user, initialLoadComplete, authLoading, loadingLinks, loadingTransactionsForStats, processDashboardData]);
+  }, [allUserTransactionsData, userPaymentLinks, user, initialLoadComplete, authLoading, loadingLinks, loadingTransactionsData, processDashboardData]);
 
 
   const handleRefreshAllData = () => {
-     toast({title: "Data is Live", description: "Dashboard analytics update in real-time."})
+     // Since data is now real-time via onSnapshot, this button is more of a user affordance.
+     // We could potentially force a re-fetch if absolutely necessary, but generally not needed.
+     toast({title: "Data is Live", description: "Dashboard analytics update in real-time based on the selected date range."})
   };
 
 
@@ -459,7 +471,7 @@ const DashboardPage: NextPage = () => {
                 <CardTitle className="text-base font-medium text-foreground">Monthly Revenue</CardTitle>
                 {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{statData[0].value}</CardDescription>}
                 <div className="flex gap-1 pt-1">
-                    <p className="text-base text-muted-foreground font-normal">{statData[0].periodDescription === "This Year" ? "Last 12 Months" : statData[0].periodDescription}</p>
+                    <p className="text-base text-muted-foreground font-normal">Last 12 Months</p>
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
@@ -486,7 +498,7 @@ const DashboardPage: NextPage = () => {
                 <CardTitle className="text-base font-medium text-foreground">Quarterly Sales</CardTitle>
                 {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{statData[0].value}</CardDescription> }
                 <div className="flex gap-1 pt-1">
-                    <p className="text-base text-muted-foreground font-normal">{statData[0].periodDescription === "This Year" ? "Last 4 Quarters" : statData[0].periodDescription}</p>
+                    <p className="text-base text-muted-foreground font-normal">Last 4 Quarters</p>
                 </div>
             </CardHeader>
             <CardContent className="h-[250px] p-4">
@@ -573,3 +585,5 @@ const DashboardPage: NextPage = () => {
 };
 
 export default DashboardPage;
+
+    
