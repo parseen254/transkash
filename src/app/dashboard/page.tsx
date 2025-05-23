@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend } from 'recharts';
+import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend, ResponsiveContainer } from 'recharts';
 import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { useEffect, useState, useMemo } from 'react';
@@ -90,6 +90,7 @@ const DashboardPage: NextPage = () => {
   const [topSellingProductsData, setTopSellingProductsData] = useState<AggregatedProductData[]>([]);
   const [transactionStatusData, setTransactionStatusData] = useState<TransactionStatusData[]>([]);
   const [loadingStatsAndCharts, setLoadingStatsAndCharts] = useState(true);
+  const [fetchedAllUserTransactions, setFetchedAllUserTransactions] = useState<Transaction[]>([]); // New state for all transactions
 
   // Fetch latest 5 transactions for the table (real-time)
   useEffect(() => {
@@ -150,22 +151,23 @@ const DashboardPage: NextPage = () => {
         orderBy('createdAt', 'asc')
       );
       const allTransactionsSnapshot = await getDocs(allTransactionsQuery);
-      const allUserTransactions: Transaction[] = [];
+      const allUserTransactions: Transaction[] = []; // Local variable for this function scope
       allTransactionsSnapshot.forEach(doc => {
         allUserTransactions.push({ id: doc.id, ...doc.data() } as Transaction);
       });
+      setFetchedAllUserTransactions(allUserTransactions); // Set state here
       
       const completedTransactions = allUserTransactions.filter(txn => txn.status === 'Completed');
 
       // --- Aggregate for Stat Cards ---
       let totalRevenue = 0;
       completedTransactions.forEach(txn => { totalRevenue += txn.amount; });
-      const totalCompletedTransactions = completedTransactions.length;
+      const totalCompletedTransactionsCount = completedTransactions.length;
       const activePaymentLinksCount = userPaymentLinks.filter(link => link.status === 'Active').length;
       
       setStatData([
         { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}` },
-        { title: 'Total Completed Transactions', value: totalCompletedTransactions.toString() },
+        { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toString() },
         { title: 'Active Payment Links', value: activePaymentLinksCount.toString() },
       ]);
 
@@ -174,7 +176,7 @@ const DashboardPage: NextPage = () => {
       const last12MonthLabels: string[] = [];
       for (let i = 11; i >= 0; i--) {
           const d = new Date();
-          d.setDate(1); // Ensure it's the first of the month to avoid issues with month lengths
+          d.setDate(1); 
           d.setMonth(d.getMonth() - i);
           last12MonthsKeys.push(format(d, 'yyyy-MM'));
           last12MonthLabels.push(format(d, 'MMM'));
@@ -192,16 +194,16 @@ const DashboardPage: NextPage = () => {
       });
       setMonthlyRevenueData(last12MonthsKeys.map((key, index) => ({
           month: last12MonthLabels[index],
-          revenue: monthlyAgg[key] || 0 // Ensure 0 if no revenue
+          revenue: monthlyAgg[key] || 0 
       })));
       
       // --- Aggregate for Quarterly Sales Chart ---
       const quarterlyAgg: { [key: string]: { sales: number; quarterLabel: string } } = {};
       const currentYear = new Date().getFullYear();
-      const currentMonth = new Date().getMonth(); // 0-11
-      const currentQuarter = Math.floor(currentMonth / 3); // 0-3
+      const currentMonth = new Date().getMonth(); 
+      const currentQuarter = Math.floor(currentMonth / 3); 
 
-      for (let i = 3; i >= 0; i--) { // Last 4 quarters including current
+      for (let i = 3; i >= 0; i--) { 
           let yearForQuarter = currentYear;
           let qNumForQuarter = currentQuarter - i;
           
@@ -243,7 +245,7 @@ const DashboardPage: NextPage = () => {
 
       // --- Aggregate for Transaction Status Pie Chart ---
       const statusCounts = { Completed: 0, Pending: 0, Failed: 0 };
-      allUserTransactions.forEach(txn => {
+      allUserTransactions.forEach(txn => { // Use allUserTransactions from this scope
         if (txn.status === 'Completed') statusCounts.Completed++;
         else if (txn.status === 'Pending') statusCounts.Pending++;
         else if (txn.status === 'Failed') statusCounts.Failed++;
@@ -252,7 +254,7 @@ const DashboardPage: NextPage = () => {
         { name: 'Completed', value: statusCounts.Completed, fill: 'hsl(var(--chart-1))' },
         { name: 'Pending', value: statusCounts.Pending, fill: 'hsl(var(--chart-3))' },
         { name: 'Failed', value: statusCounts.Failed, fill: 'hsl(var(--chart-5))' },
-      ].filter(d => d.value > 0)); // Only include statuses with counts > 0
+      ].filter(d => d.value > 0)); 
 
 
     } catch (error) {
@@ -281,13 +283,13 @@ const DashboardPage: NextPage = () => {
   
   const formatDateDisplay = (dateValue: Timestamp | Date | string | undefined | null) => {
     if (!dateValue) return 'N/A';
-    const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue);
+    const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue as any);
     return format(date, 'yyyy-MM-dd');
   };
   
-  const currentTopProductInfo = topSellingProductsData.length > 0 
-    ? { name: topSellingProductsData[0].name, change: "" } // Remove dummy change
-    : { name: "N/A", change: "N/A" };
+  const currentTopProductInfo = useMemo(() => topSellingProductsData.length > 0 
+    ? { name: topSellingProductsData[0].name, change: "" } 
+    : { name: "N/A", change: "N/A" }, [topSellingProductsData]);
 
   return (
     <div className="space-y-8">
@@ -381,15 +383,15 @@ const DashboardPage: NextPage = () => {
             <CardContent className="h-[250px] p-4">
               {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
                monthlyRevenueData.length > 0 && monthlyRevenueData.some(d => d.revenue > 0) ? (
-                <ChartContainer config={monthlyRevenueChartConfig} className="h-full w-full">
-                    <LineChart data={monthlyRevenueData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                        <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-                        <YAxis tickLine={false} axisLine={false} tickMargin={8} />
-                        <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
-                        <Line dataKey="revenue" type="monotone" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                    </LineChart>
-                </ChartContainer>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={monthlyRevenueData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+                      <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                      <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
+                      <Line dataKey="revenue" type="monotone" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
               ) : (
                 <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
               )}
@@ -407,15 +409,15 @@ const DashboardPage: NextPage = () => {
             <CardContent className="h-[250px] p-4">
                 {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
                  quarterlySalesData.length > 0 && quarterlySalesData.some(d => d.sales > 0) ? (
-                    <ChartContainer config={quarterlySalesChartConfig} className="h-full w-full">
-                        <BarChart data={quarterlySalesData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                            <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
-                            <YAxis tickLine={false} axisLine={false} tickMargin={8} />
-                            <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="dot" hideLabel />} />
-                            <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ChartContainer>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={quarterlySalesData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                          <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                          <RechartsTooltip cursor={false} content={<ChartTooltipContent indicator="dot" hideLabel />} />
+                          <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
                 ) : (
                      <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
                 )}
@@ -438,7 +440,7 @@ const DashboardPage: NextPage = () => {
                             <div key={product.name}>
                                 <div className="flex justify-between text-[13px] font-bold text-muted-foreground tracking-[0.015em] mb-1">
                                     <span>{product.name}</span>
-                                    {/* Optional: Display product.displayValue here if needed */}
+                                     <span className="text-xs text-foreground">{product.displayValue}</span>
                                 </div>
                                 <div className="h-2 w-full bg-muted rounded-full">
                                     <div className="h-2 bg-primary rounded-full" style={{ width: `${product.value}%` }} />
@@ -454,7 +456,7 @@ const DashboardPage: NextPage = () => {
           <Card className="bg-card shadow-sm rounded-xl border border-border">
             <CardHeader className="p-6">
               <CardTitle className="text-base font-medium text-foreground">Transaction Status Breakdown</CardTitle>
-              {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{allUserTransactions.length} Total</CardDescription>}
+              {loadingStatsAndCharts ? <Skeleton className="h-8 w-3/4 mt-1" /> : <CardDescription className="text-[32px] font-bold tracking-light text-foreground truncate pt-1">{fetchedAllUserTransactions.length} Total</CardDescription>}
               <div className="flex gap-1 pt-1">
                     <p className="text-base text-muted-foreground font-normal">Last Year</p>
                 </div>
@@ -462,7 +464,7 @@ const DashboardPage: NextPage = () => {
             <CardContent className="h-[250px] p-4">
               {loadingStatsAndCharts ? <div className="h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : 
                transactionStatusData.length > 0 ? (
-                <ChartContainer config={transactionStatusChartConfig} className="h-full w-full">
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <RechartsTooltip content={<ChartTooltipContent hideLabel />} />
                     <Pie data={transactionStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
@@ -472,7 +474,7 @@ const DashboardPage: NextPage = () => {
                     </Pie>
                     <Legend wrapperStyle={{fontSize: "12px"}} />
                   </PieChart>
-                </ChartContainer>
+                </ResponsiveContainer>
               ) : (
                 <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
               )}
