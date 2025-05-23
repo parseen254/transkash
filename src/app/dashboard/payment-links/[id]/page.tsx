@@ -4,8 +4,8 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState, useMemo, useRef } from 'react'; // Added useRef
-import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2, Download, Share } from 'lucide-react'; // Added Download, Share
+import { useEffect, useState, useMemo } from 'react'; // Removed useRef
+import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2, Download, Share } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -43,8 +43,6 @@ const PaymentLinkDetailsPage: NextPage = () => {
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [isQrCodeDialogOpen, setIsQrCodeDialogOpen] = useState(false);
   const [webShareApiSupported, setWebShareApiSupported] = useState(false);
-
-  const qrCodeSvgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     if (typeof navigator !== 'undefined' && navigator.share) {
@@ -173,34 +171,6 @@ const PaymentLinkDetailsPage: NextPage = () => {
     return format(date, includeTime ? 'PPP p' : 'PPP');
   };
 
-  const handleDownloadQrCode = () => {
-    if (qrCodeSvgRef.current && paymentLink) {
-      const svgElement = qrCodeSvgRef.current;
-      const svgString = new XMLSerializer().serializeToString(svgElement);
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-
-      img.onload = () => {
-        canvas.width = img.width; // Use image dimensions for canvas
-        canvas.height = img.height;
-        ctx?.drawImage(img, 0, 0);
-        const pngUrl = canvas.toDataURL('image/png');
-        const downloadLink = document.createElement('a');
-        downloadLink.href = pngUrl;
-        downloadLink.download = `${paymentLink.linkName.replace(/\s+/g, '_')}_QR_Code.png`;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-        toast({ title: "QR Code Downloaded", description: "The QR code image has started downloading." });
-      };
-      // Use encodeURIComponent for SVG string in data URL
-      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
-    } else {
-      toast({ title: "Error", description: "Could not download QR code.", variant: "destructive" });
-    }
-  };
-
   const handleNativeShare = async () => {
     if (navigator.share && paymentLink && fullShareableUrl) {
       try {
@@ -211,7 +181,6 @@ const PaymentLinkDetailsPage: NextPage = () => {
         });
         toast({ title: "Shared!", description: "Payment link shared." });
       } catch (error) {
-        // Don't show error toast if user cancels share dialog (AbortError)
         if ((error as DOMException).name !== 'AbortError') {
            toast({ title: "Share Failed", description: "Could not share the link.", variant: "destructive" });
         }
@@ -363,7 +332,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
         </DialogHeader>
         <div className="flex flex-col items-center justify-center space-y-4 py-4">
           {fullShareableUrl ? (
-            <div ref={qrCodeSvgRef as React.RefObject<HTMLDivElement>} className="inline-block"> {/* Wrapper for ref if QRCodeSVG itself doesn't take it cleanly for direct SVG access */}
+            <div className="inline-block">
               <QRCodeSVG 
                 value={fullShareableUrl} 
                 size={220}
@@ -378,37 +347,33 @@ const PaymentLinkDetailsPage: NextPage = () => {
                  <Loader2 className="h-12 w-12 animate-spin text-primary" />
             </div>
           )}
-          <div className="w-full space-y-2 pt-2">
-            <Label htmlFor="shareable-link-url-qr" className="text-xs text-muted-foreground text-center block">Shareable Link</Label>
-            <Input
-              id="shareable-link-url-qr"
-              readOnly
-              value={fullShareableUrl || "Generating link..."}
-              className="text-sm text-center bg-secondary border-secondary"
-            />
+          <div className="w-full space-y-1 pt-2">
+            <Label htmlFor="shareable-link-url-qr" className="text-xs text-muted-foreground text-left block">Shareable Link</Label>
+            <div className="relative flex items-center">
+                <Input
+                id="shareable-link-url-qr"
+                readOnly
+                value={fullShareableUrl || "Generating link..."}
+                className="h-10 text-sm bg-secondary border-secondary pr-10 flex-1"
+                />
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onClick={() => handleCopyLink(fullShareableUrl)}
+                    disabled={!fullShareableUrl}
+                    aria-label="Copy link"
+                >
+                    <Copy className="h-4 w-4" />
+                </Button>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 w-full pt-2">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => handleCopyLink(fullShareableUrl)}
-              disabled={!fullShareableUrl}
-            >
-              <Copy className="mr-2 h-4 w-4" /> Copy Link
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={handleDownloadQrCode}
-              disabled={!fullShareableUrl || !qrCodeSvgRef.current}
-            >
-              <Download className="mr-2 h-4 w-4" /> Download QR
-            </Button>
-          </div>
+          
           {webShareApiSupported && (
             <Button
               variant="default"
-              className="w-full mt-2"
+              className="w-full mt-4"
               onClick={handleNativeShare}
               disabled={!fullShareableUrl || !paymentLink}
             >
@@ -428,4 +393,3 @@ const PaymentLinkDetailsPage: NextPage = () => {
 
 export default PaymentLinkDetailsPage;
 
-    
