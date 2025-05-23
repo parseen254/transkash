@@ -10,13 +10,9 @@ import { AppLogo } from '@/components/shared/app-logo';
 import { Spinner } from '@/components/ui/spinner';
 import type { PaymentLink } from '@/lib/types';
 import { format } from 'date-fns';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
-// Define dummyPaymentLinks here or import from a shared location
-const dummyPaymentLinks: PaymentLink[] = [
-  { id: 'pl_1', linkName: 'Invoice #1234 (The Coffee Shop)', reference: 'ORD1234567890', amount: '25.00', currency: 'KES', purpose: 'Coffee and Snacks', creationDate: new Date('2023-10-01').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 15)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_1', hasExpiry: true },
-  { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: '1500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: new Date('2023-10-05').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 30)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_2', hasExpiry: true },
-  { id: 'pl_3', linkName: 'Monthly Subscription', reference: 'SUB003', amount: '2000', currency: 'KES', purpose: 'SaaS Subscription', creationDate: new Date('2023-09-20').toISOString(), status: 'Active', payoutAccountId: 'acc_2', shortUrl: '/payment/order?paymentLinkId=pl_3', hasExpiry: false },
-];
 
 const PaymentFailedContent: React.FC = () => {
   const router = useRouter();
@@ -25,21 +21,36 @@ const PaymentFailedContent: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paymentLinkIdForRetry, setPaymentLinkIdForRetry] = useState<string | null>(null);
+  const [failureReason, setFailureReason] = useState<string | null>("Transaction declined by your bank."); // Default or from query params
 
   useEffect(() => {
     const id = searchParams.get('paymentLinkId');
+    const reason = searchParams.get('reason'); // Optional reason from query
+    
     setPaymentLinkIdForRetry(id); 
+    if (reason) setFailureReason(reason);
+
     if (id) {
       setLoading(true);
-      setTimeout(() => {
-        const foundLink = dummyPaymentLinks.find(link => link.id === id);
-        if (foundLink) {
-          setPaymentLink(foundLink);
-        } else {
-          setError("Payment link details not found for this transaction attempt.");
+      setError(null);
+      const fetchLinkDetails = async () => {
+        try {
+          const linkDocRef = doc(db, 'paymentLinks', id);
+          const docSnap = await getDoc(linkDocRef);
+
+          if (docSnap.exists()) {
+            setPaymentLink({ id: docSnap.id, ...docSnap.data() } as PaymentLink);
+          } else {
+            setError("Payment link details not found for this transaction attempt.");
+          }
+        } catch (err) {
+          console.error("Error fetching payment link for failure page:", err);
+          setError("An error occurred while fetching payment details.");
+        } finally {
+          setLoading(false);
         }
-        setLoading(false);
-      }, 500);
+      };
+      fetchLinkDetails();
     } else {
       setError("Payment link ID not provided.");
       setLoading(false);
@@ -50,9 +61,14 @@ const PaymentFailedContent: React.FC = () => {
     if (paymentLinkIdForRetry) {
       router.push(`/payment/order?paymentLinkId=${paymentLinkIdForRetry}`);
     } else {
-      // Fallback or error, ideally this shouldn't happen if link was fetched
       router.push('/'); 
     }
+  };
+
+  const formatDate = (dateValue: Timestamp | Date | string | undefined | null) => {
+    if (!dateValue) return 'N/A';
+    const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue as any);
+    return format(date, 'PPP');
   };
 
   if (loading) {
@@ -64,10 +80,6 @@ const PaymentFailedContent: React.FC = () => {
     );
   }
   
-  // Forcing a reason for demo purposes if link is found
-  const failureReason = paymentLink ? "Transaction declined by your bank." : "Could not retrieve payment details.";
-
-
   return (
     <div className="w-full max-w-md mx-auto text-center space-y-8">
       <h1 className="text-3xl font-bold text-foreground">Payment Failed</h1>
@@ -97,7 +109,7 @@ const PaymentFailedContent: React.FC = () => {
           <div className="flex justify-between">
             <span className="text-muted-foreground">Amount</span>
             <span className="font-bold text-foreground text-lg">
-              {paymentLink.currency} {parseFloat(paymentLink.amount).toFixed(2)}
+              {paymentLink.currency} {paymentLink.amount.toFixed(2)}
             </span>
           </div>
            {failureReason && (
@@ -156,5 +168,3 @@ const PaymentFailedPage: NextPage = () => {
 };
 
 export default PaymentFailedPage;
-
-    

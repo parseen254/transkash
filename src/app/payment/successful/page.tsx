@@ -10,15 +10,8 @@ import { AppLogo } from '@/components/shared/app-logo';
 import { Spinner } from '@/components/ui/spinner';
 import type { PaymentLink } from '@/lib/types';
 import { format } from 'date-fns';
-
-// Define dummyPaymentLinks here or import from a shared location
-// For simplicity in this single file change, I'll define it here.
-const dummyPaymentLinks: PaymentLink[] = [
-  { id: 'pl_1', linkName: 'Invoice #1234 (The Coffee Shop)', reference: 'ORD1234567890', amount: '25.00', currency: 'KES', purpose: 'Coffee and Snacks', creationDate: new Date('2023-10-01').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 15)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_1', hasExpiry: true },
-  { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: '1500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: new Date('2023-10-05').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 30)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_2', hasExpiry: true },
-  { id: 'pl_3', linkName: 'Monthly Subscription', reference: 'SUB003', amount: '2000', currency: 'KES', purpose: 'SaaS Subscription', creationDate: new Date('2023-09-20').toISOString(), status: 'Active', payoutAccountId: 'acc_2', shortUrl: '/payment/order?paymentLinkId=pl_3', hasExpiry: false },
-];
-
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const PaymentSuccessfulContent: React.FC = () => {
   const router = useRouter();
@@ -31,16 +24,27 @@ const PaymentSuccessfulContent: React.FC = () => {
     const paymentLinkId = searchParams.get('paymentLinkId');
     if (paymentLinkId) {
       setLoading(true);
-      // Simulate fetching link details
-      setTimeout(() => {
-        const foundLink = dummyPaymentLinks.find(link => link.id === paymentLinkId);
-        if (foundLink) {
-          setPaymentLink(foundLink);
-        } else {
-          setError("Payment link details not found for this transaction.");
+      setError(null);
+
+      const fetchLinkDetails = async () => {
+        try {
+          const linkDocRef = doc(db, 'paymentLinks', paymentLinkId);
+          const docSnap = await getDoc(linkDocRef);
+
+          if (docSnap.exists()) {
+            const linkData = { id: docSnap.id, ...docSnap.data() } as PaymentLink;
+            setPaymentLink(linkData);
+          } else {
+            setError("Payment link details not found for this transaction.");
+          }
+        } catch (err) {
+          console.error("Error fetching payment link for success page:", err);
+          setError("An error occurred while fetching payment details.");
+        } finally {
+          setLoading(false);
         }
-        setLoading(false);
-      }, 500);
+      };
+      fetchLinkDetails();
     } else {
       setError("Payment link ID not provided.");
       setLoading(false);
@@ -67,6 +71,12 @@ const PaymentSuccessfulContent: React.FC = () => {
     );
   }
 
+  const formatDate = (dateValue: Timestamp | Date | string | undefined | null) => {
+    if (!dateValue) return 'N/A';
+    const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue as any);
+    return format(date, 'PPP');
+  };
+
   return (
     <div className="w-full max-w-md mx-auto text-center space-y-8">
       <h1 className="text-3xl font-bold text-foreground">Payment Successful</h1>
@@ -92,16 +102,13 @@ const PaymentSuccessfulContent: React.FC = () => {
         <div className="flex justify-between">
           <span className="text-muted-foreground">Total</span>
           <span className="font-bold text-foreground text-lg">
-            {paymentLink.currency} {parseFloat(paymentLink.amount).toFixed(2)}
+            {paymentLink.currency} {paymentLink.amount.toFixed(2)}
           </span>
         </div>
-        {paymentLink.hasExpiry && paymentLink.expiryDate && (
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Paid on</span> 
-            {/* Or "Due by" depending on context, design shows "Due by" but "Paid on" makes more sense for a success page */}
-            <span className="font-medium text-muted-foreground">{format(new Date(), 'MM/dd/yyyy')}</span>
-          </div>
-        )}
+        <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Paid on</span>
+            <span className="font-medium text-muted-foreground">{formatDate(new Date())}</span>
+        </div>
       </div>
 
       <Button 
@@ -138,5 +145,3 @@ const PaymentSuccessfulPage: NextPage = () => {
 };
 
 export default PaymentSuccessfulPage;
-
-    
