@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, Timestamp, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, Timestamp, serverTimestamp, writeBatch, getDocs } from 'firebase/firestore'; // Added getDocs
 import { QRCodeSVG } from 'qrcode.react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -309,7 +309,13 @@ const PaymentLinkDetailsPage: NextPage = () => {
           </Card>
 
           <h2 className="text-xl font-semibold text-foreground mt-8">Transactions for this Link</h2>
-          {transactions.length > 0 ? (
+          {loadingLinkTransactions ? (
+            <Card className="rounded-xl border border-border">
+                 <CardContent className="p-0"><Table><TableHeader><TableRow className="hover:bg-card">{[...Array(5)].map((_, i) => <TableHead key={i} className="px-4 py-3"><Skeleton className="h-5 w-full" /></TableHead>)}</TableRow></TableHeader>
+                    <TableBody>{[...Array(ITEMS_PER_PAGE)].map((_, i) => (<TableRow key={i} className="h-[60px]">{[...Array(5)].map((_, j) => <TableCell key={j} className="px-4 py-2"><Skeleton className="h-5 w-full" /></TableCell>)}</TableRow>))}</TableBody>
+                </Table></CardContent>
+            </Card>
+          ) : transactions.length > 0 ? (
             <Card className="rounded-xl border border-border"> <CardContent className="p-0"> <div className="overflow-x-auto">
                 <Table><TableHeader><TableRow className="hover:bg-card">
                       <TableHead className="px-4 py-3 text-sm font-medium text-foreground">Date</TableHead>
@@ -348,7 +354,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
         </div>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>This action cannot be undone. This will permanently delete the payment link &quot;{paymentLink?.linkName}&quot; and all its associated transactions.</AlertDialogDescription>
+              <AlertDialogDescription>This action cannot be undone. This will permanently delete the payment link &quot;{paymentLink?.linkName}&quot; and all its ${transactions.length} associated transactions.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleDeleteLink} className={buttonVariants({ variant: "destructive" })}>Delete</AlertDialogAction>
