@@ -4,9 +4,9 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState, useMemo } from 'react'; // Removed useRef
-import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2, Download, Share } from 'lucide-react';
-import { format } from 'date-fns';
+import { useEffect, useState, useMemo } from 'react';
+import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2, Share } from 'lucide-react';
+import { format, addDays } from 'date-fns';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, Timestamp, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, Timestamp, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { QRCodeSVG } from 'qrcode.react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -141,11 +141,24 @@ const PaymentLinkDetailsPage: NextPage = () => {
 
   const handleToggleStatus = async () => {
     if (!paymentLink || !user) return;
-    const newStatus = paymentLink.status === 'Active' ? 'Disabled' : 'Active';
+    
+    const linkDocRef = doc(db, 'paymentLinks', paymentLink.id);
+    let updateData: Partial<PaymentLink> = {
+      updatedAt: serverTimestamp() as Timestamp,
+    };
+
+    if (paymentLink.status === 'Active') {
+      updateData.status = 'Disabled';
+    } else { // If 'Disabled', 'Expired', or 'Paid', make it 'Active'
+      const newExpiryDate = addDays(new Date(), 10);
+      updateData.status = 'Active';
+      updateData.expiryDate = Timestamp.fromDate(newExpiryDate);
+      updateData.hasExpiry = true;
+    }
+
     try {
-      const linkDocRef = doc(db, 'paymentLinks', paymentLink.id);
-      await updateDoc(linkDocRef, { status: newStatus, updatedAt: serverTimestamp() });
-      toast({ title: "Status Updated", description: `Link status changed to ${newStatus}.` });
+      await updateDoc(linkDocRef, updateData);
+      toast({ title: "Status Updated", description: `Link status changed to ${updateData.status}.` });
     } catch (error) {
       console.error("Error updating link status:", error);
       toast({ title: "Error", description: "Could not update link status.", variant: "destructive" });
@@ -154,13 +167,36 @@ const PaymentLinkDetailsPage: NextPage = () => {
   
   const handleDeleteLink = async () => {
     if (!paymentLink || !user) return;
+    
+    const batch = writeBatch(db);
+    const linkDocRef = doc(db, 'paymentLinks', paymentLink.id);
+
     try {
-      await deleteDoc(doc(db, 'paymentLinks', paymentLink.id));
-      toast({ title: "Link Deleted", description: `Payment link ${paymentLink.linkName} deleted.`});
+      // 1. Query for associated transactions
+      const transactionsQuery = query(
+        collection(db, 'transactions'),
+        where('paymentLinkId', '==', paymentLink.id),
+        where('userId', '==', user.uid) // Ensure we only delete transactions for this user
+      );
+      const transactionsSnapshot = await getDocs(transactionsQuery);
+
+      // 2. Add delete operations for each transaction to the batch
+      transactionsSnapshot.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      console.log(`Found ${transactionsSnapshot.size} transactions to delete for payment link ${paymentLink.id}`);
+
+      // 3. Add delete operation for the payment link itself
+      batch.delete(linkDocRef);
+
+      // 4. Commit the batch
+      await batch.commit();
+
+      toast({ title: "Link Deleted", description: `Payment link "${paymentLink.linkName}" and its ${transactionsSnapshot.size} associated transaction(s) deleted.`});
       router.push('/dashboard/payment-links');
-    } catch (error) {
-      console.error("Error deleting payment link:", error);
-      toast({ title: "Error", description: "Could not delete payment link.", variant: "destructive"});
+    } catch (error: any) {
+      console.error("Error deleting payment link and transactions:", error);
+      toast({ title: "Error", description: `Could not delete payment link: ${error.message}`, variant: "destructive"});
     }
     setIsDeleteAlertOpen(false);
   };
@@ -235,11 +271,9 @@ const PaymentLinkDetailsPage: NextPage = () => {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                 <div><CardTitle className="text-2xl mb-1">{paymentLink.linkName}</CardTitle><CardDescription>Details for payment link: {paymentLink.reference}</CardDescription></div>
                 <div className="mt-4 sm:mt-0 flex space-x-2">
-                  <DialogTrigger asChild>
-                    <Button variant="default" size="sm" onClick={() => setIsQrCodeDialogOpen(true)}>
+                  <Button variant="default" size="sm" onClick={() => setIsQrCodeDialogOpen(true)}>
                       <Share2 className="mr-2 h-4 w-4" /> Share
-                    </Button>
-                  </DialogTrigger>
+                  </Button>
                   <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="outline" size="sm">Actions <MoreHorizontal className="ml-2 h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -314,7 +348,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
         </div>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>This action cannot be undone. This will permanently delete the payment link &quot;{paymentLink?.linkName}&quot; and all its associated data.</AlertDialogDescription>
+              <AlertDialogDescription>This action cannot be undone. This will permanently delete the payment link &quot;{paymentLink?.linkName}&quot; and all its associated transactions.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleDeleteLink} className={buttonVariants({ variant: "destructive" })}>Delete</AlertDialogAction>
