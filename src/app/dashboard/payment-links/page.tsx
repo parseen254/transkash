@@ -18,7 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, onSnapshot, doc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc, deleteDoc, Timestamp, writeBatch, getDocs } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -71,7 +71,7 @@ const PaymentLinksTable: React.FC<{
 
   const formatDateDisplay = (dateValue: Timestamp | Date | string | undefined | null) => {
     if (!dateValue) return 'N/A';
-    const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue);
+    const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue as any);
     return format(date, 'PP'); // Example format: Oct 17, 2023
   };
 
@@ -204,15 +204,41 @@ const PaymentLinksPage: NextPage = () => {
   }, [user, initialLoadComplete, router, toast]);
 
   const handleDelete = async (id: string, linkName: string) => {
+    if (!user) {
+      toast({ title: "Error", description: "Authentication required.", variant: "destructive"});
+      return;
+    }
+    
+    const batch = writeBatch(db);
+    const linkDocRef = doc(db, 'paymentLinks', id);
+
     try {
-      await deleteDoc(doc(db, 'paymentLinks', id));
+      // 1. Query for associated transactions
+      const transactionsQuery = query(
+        collection(db, 'transactions'),
+        where('paymentLinkId', '==', id),
+        where('userId', '==', user.uid) 
+      );
+      const transactionsSnapshot = await getDocs(transactionsQuery);
+
+      // 2. Add delete operations for each transaction to the batch
+      transactionsSnapshot.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      
+      // 3. Add delete operation for the payment link itself
+      batch.delete(linkDocRef);
+
+      // 4. Commit the batch
+      await batch.commit();
+
       toast({ 
           title: "Payment Link Deleted", 
-          description: `Link "${linkName}" has been deleted.` 
+          description: `Link "${linkName}" and its ${transactionsSnapshot.size} associated transaction(s) have been deleted.` 
       });
-    } catch (error) {
-      console.error("Error deleting payment link:", error);
-      toast({ title: "Error", description: "Failed to delete payment link.", variant: "destructive"});
+    } catch (error: any) {
+      console.error("Error deleting payment link and transactions:", error);
+      toast({ title: "Error", description: `Failed to delete payment link: ${error.message}`, variant: "destructive"});
     }
   };
   
@@ -242,7 +268,7 @@ const PaymentLinksPage: NextPage = () => {
     [filteredLinks]
   );
   
-  if (authLoading || (!user && !initialLoadComplete)) {
+  if (authLoading || (!user && !initialLoadComplete)) { 
      return (
         <div className="flex justify-center items-center h-full p-8">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
