@@ -5,7 +5,7 @@ import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, LinkIcon as LinkIconLucide, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2 } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,7 +45,9 @@ const PaymentLinkDetailsPage: NextPage = () => {
 
   const fullShareableUrl = useMemo(() => {
     if (paymentLink?.shortUrl && typeof window !== 'undefined') {
-      return `${window.location.origin}${paymentLink.shortUrl}`;
+      // Ensure shortUrl starts with a /
+      const path = paymentLink.shortUrl.startsWith('/') ? paymentLink.shortUrl : `/${paymentLink.shortUrl}`;
+      return `${window.location.origin}${path}`;
     }
     return '';
   }, [paymentLink]);
@@ -91,7 +93,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
         transactionsCollection, 
         where('userId', '==', user.uid), 
         where('paymentLinkId', '==', paymentLinkId), 
-        orderBy('createdAt', 'desc') // Changed from 'date' to 'createdAt' for consistency
+        orderBy('createdAt', 'desc')
     );
     const unsubscribeTransactions = onSnapshot(q, (querySnapshot) => {
       const fetchedTransactions: Transaction[] = [];
@@ -123,8 +125,12 @@ const PaymentLinkDetailsPage: NextPage = () => {
   const handlePreviousPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
 
   const handleCopyLink = (urlToCopy: string) => {
+    if (!urlToCopy) {
+        toast({ title: "Error", description: "Shareable URL not available.", variant: "destructive"});
+        return;
+    }
     navigator.clipboard.writeText(urlToCopy);
-    toast({ title: "Link Copied!", description: `Shareable link ${urlToCopy} copied to clipboard.` });
+    toast({ title: "Link Copied!", description: `Shareable link copied to clipboard.` });
   };
 
   const handleToggleStatus = async () => {
@@ -166,7 +172,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
       <div className="space-y-6">
         <Skeleton className="h-8 w-48" />
         <Card><CardHeader><Skeleton className="h-8 w-1/2" /><Skeleton className="h-4 w-3/4 mt-2" /></CardHeader>
-          <CardContent className="space-y-4">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
+          <CardContent className="space-y-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
             <div className="flex gap-2 mt-4"><Skeleton className="h-10 w-24" /><Skeleton className="h-10 w-24" /></div>
           </CardContent>
         </Card>
@@ -183,11 +189,10 @@ const PaymentLinkDetailsPage: NextPage = () => {
     return <div className="text-center py-10"><p className="text-muted-foreground">Payment link not found or you do not have access.</p><Button onClick={() => router.push('/dashboard/payment-links')} className="mt-4">Back to Payment Links</Button></div>;
   }
 
-  const InfoItem = ({ icon: Icon, label, value, isLink }: { icon: React.ElementType, label: string, value?: string | React.ReactNode, isLink?: boolean }) => (
+  const InfoItem = ({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value?: string | React.ReactNode }) => (
     <div className="flex items-start space-x-3"> <Icon className="h-5 w-5 text-muted-foreground mt-0.5" />
       <div> <p className="text-sm text-muted-foreground">{label}</p>
-        {isLink && typeof value === 'string' && value.startsWith('/') ? ( <Link href={fullShareableUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline break-all">{fullShareableUrl}</Link> ) : 
-        ( <p className="text-sm font-medium text-foreground break-all">{value || 'N/A'}</p> )}
+        <p className="text-sm font-medium text-foreground break-all">{value || 'N/A'}</p>
       </div>
     </div>
   );
@@ -205,14 +210,15 @@ const PaymentLinkDetailsPage: NextPage = () => {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                 <div><CardTitle className="text-2xl mb-1">{paymentLink.linkName}</CardTitle><CardDescription>Details for payment link: {paymentLink.reference}</CardDescription></div>
                 <div className="mt-4 sm:mt-0 flex space-x-2">
+                  <DialogTrigger asChild>
+                    <Button variant="default" size="sm" onClick={() => setIsQrCodeDialogOpen(true)}>
+                      <Share2 className="mr-2 h-4 w-4" /> Share
+                    </Button>
+                  </DialogTrigger>
                   <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="outline" size="sm">Actions <MoreHorizontal className="ml-2 h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => router.push(`/dashboard/payment-links/edit/${paymentLink.id}`)}><Edit className="mr-2 h-4 w-4" /> Edit Link</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleCopyLink(fullShareableUrl)}><Copy className="mr-2 h-4 w-4" /> Copy Shareable Link</DropdownMenuItem>
-                          <DialogTrigger asChild>
-                            <DropdownMenuItem onSelect={(e) => e.preventDefault()} onClick={() => setIsQrCodeDialogOpen(true)}><Share2 className="mr-2 h-4 w-4" /> Share / QR Code</DropdownMenuItem>
-                          </DialogTrigger>
                           <DropdownMenuItem onClick={handleToggleStatus}>
                               {paymentLink.status === 'Active' ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
                               {paymentLink.status === 'Active' ? 'Deactivate' : 'Activate'} Link
@@ -240,7 +246,6 @@ const PaymentLinkDetailsPage: NextPage = () => {
               </div>
               <InfoItem icon={CalendarDays} label="Creation Date" value={formatDate(paymentLink.creationDate, true)} />
               {paymentLink.hasExpiry && paymentLink.expiryDate && ( <InfoItem icon={CalendarDays} label="Expiry Date" value={formatDate(paymentLink.expiryDate, true)} /> )}
-              <InfoItem icon={LinkIconLucide} label="Shareable Link" value={paymentLink.shortUrl} isLink />
             </CardContent>
           </Card>
 
@@ -304,21 +309,23 @@ const PaymentLinkDetailsPage: NextPage = () => {
           {fullShareableUrl ? (
             <QRCodeSVG 
               value={fullShareableUrl} 
-              size={220} // Increased size
+              size={220}
               bgColor={"#ffffff"} 
               fgColor={"#000000"} 
               level={"Q"} 
-              className="rounded-lg border border-border p-2 bg-white" // Added some padding and bg
+              className="rounded-lg border border-border p-2 bg-white"
             />
           ) : (
-            <p className="text-muted-foreground">Generating QR code...</p>
+            <div className="h-[220px] w-[220px] flex items-center justify-center bg-muted rounded-lg border border-border">
+                 <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            </div>
           )}
           <div className="w-full space-y-2 pt-2">
             <Label htmlFor="shareable-link-url-qr" className="text-xs text-muted-foreground text-center block">Shareable Link</Label>
             <Input
               id="shareable-link-url-qr"
               readOnly
-              value={fullShareableUrl}
+              value={fullShareableUrl || "Generating link..."}
               className="text-sm text-center bg-secondary border-secondary"
             />
             <Button
@@ -342,3 +349,5 @@ const PaymentLinkDetailsPage: NextPage = () => {
 };
 
 export default PaymentLinkDetailsPage;
+
+    
