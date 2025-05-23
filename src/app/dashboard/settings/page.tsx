@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { useEffect, useState, useRef } from 'react';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, writeBatch } from 'firebase/firestore'; // Added collection, query, where, getDocs, writeBatch
 import { updateProfile, updateEmail, sendEmailVerification } from 'firebase/auth';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -15,7 +15,7 @@ import { db, auth, storage } from '@/lib/firebase';
 import { useAuth } from '@/contexts/auth-context';
 import { useTheme } from '@/contexts/theme-provider';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,6 +28,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { ThemePreference, UserProfile } from '@/lib/types';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SeedDataDialog } from '@/components/dashboard/seed-data-dialog'; // Import SeedDataDialog
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"; // Import AlertDialog components
 
 const personalInfoSchema = z.object({
   firstName: z.string().min(1, { message: 'First name is required.' }),
@@ -58,6 +60,10 @@ const ProfileSettingsPage: NextPage = () => {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [isSeedDialogOpen, setIsSeedDialogOpen] = useState(false);
+  const [isResetDataAlertOpen, setIsResetDataAlertOpen] = useState(false);
+  const [isResettingData, setIsResettingData] = useState(false);
 
   const personalForm = useForm<PersonalInfoFormValues>({
     resolver: zodResolver(personalInfoSchema),
@@ -119,10 +125,14 @@ const ProfileSettingsPage: NextPage = () => {
         setIsFetchingData(false);
       };
       fetchUserData();
-    } else if (!authLoading && initialLoadComplete) {
+    } else if (!authLoading && initialLoadComplete && !user) {
+        router.push('/login');
+        setIsFetchingData(false);
+    } else if (!authLoading && !initialLoadComplete && !user) {
+      // Handles the case where auth is done loading, but no user, and initialLoad wasn't complete yet
       setIsFetchingData(false);
     }
-  }, [user, authLoading, initialLoadComplete, personalForm, businessForm]);
+  }, [user, authLoading, initialLoadComplete, personalForm, businessForm, router]);
 
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -146,8 +156,8 @@ const ProfileSettingsPage: NextPage = () => {
         const imageRef = storageRef(storage, `user-avatars/${user.uid}/${avatarFile.name}`);
         await uploadBytes(imageRef, avatarFile);
         newPhotoURL = await getDownloadURL(imageRef);
-        setAvatarPreview(newPhotoURL);
-        setAvatarFile(null);
+        setAvatarPreview(newPhotoURL); // Update preview with final URL
+        setAvatarFile(null); // Clear the file
       }
 
       const userDocRef = doc(db, "users", user.uid);
@@ -176,7 +186,7 @@ const ProfileSettingsPage: NextPage = () => {
             await sendEmailVerification(currentAuthUser);
             toast({
               title: "Login Email Updated",
-              description: "Your login email has been updated. A new verification link has been sent.",
+              description: "Your login email has been updated. A new verification link has been sent. You may need to log in again with your new email.",
               duration: 7000,
             });
           } catch (emailError: any) {
@@ -237,6 +247,40 @@ const ProfileSettingsPage: NextPage = () => {
       });
     }
   };
+
+  const handleResetData = async () => {
+    if (!user) {
+      toast({ title: "Authentication Error", description: "You must be logged in to reset data.", variant: "destructive" });
+      setIsResetDataAlertOpen(false);
+      return;
+    }
+    setIsResettingData(true);
+    try {
+      const batch = writeBatch(db);
+      const collectionsToClear = ['paymentLinks', 'transactions', 'payoutAccounts'];
+      let totalCleared = 0;
+
+      for (const collectionName of collectionsToClear) {
+        const q = query(collection(db, collectionName), where("userId", "==", user.uid));
+        const snapshot = await getDocs(q);
+        snapshot.docs.forEach(docSnap => batch.delete(docSnap.ref));
+        totalCleared += snapshot.size;
+      }
+
+      if (totalCleared > 0) {
+        await batch.commit();
+        toast({ title: "Data Reset Successful", description: `Successfully deleted ${totalCleared} items associated with your account.` });
+      } else {
+        toast({ title: "No Data Found", description: "No data found to reset for your account." });
+      }
+    } catch (error: any) {
+      console.error("Error resetting user data:", error);
+      toast({ title: "Data Reset Failed", description: `An error occurred: ${error.message}`, variant: "destructive" });
+    } finally {
+      setIsResettingData(false);
+      setIsResetDataAlertOpen(false);
+    }
+  };
   
   const isLoading = authLoading || isFetchingData;
 
@@ -277,10 +321,11 @@ const ProfileSettingsPage: NextPage = () => {
       </div>
       
       <Tabs defaultValue="personal" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="personal">Personal</TabsTrigger>
           <TabsTrigger value="business">Business</TabsTrigger>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
+          <TabsTrigger value="data">Data Management</TabsTrigger>
         </TabsList>
 
         <TabsContent value="personal">
@@ -396,7 +441,57 @@ const ProfileSettingsPage: NextPage = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="data">
+          <Card>
+            <CardHeader>
+              <CardTitle>Data Management</CardTitle>
+              <CardDescription>Manage your application data.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <h3 className="text-lg font-medium mb-2">Seed Dummy Data</h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Populate your account with sample data for testing and demonstration purposes. 
+                  This will clear existing payment links, transactions, and payout accounts for your user.
+                </p>
+                <Button onClick={() => setIsSeedDialogOpen(true)} variant="outline">
+                  Seed Dummy Data
+                </Button>
+              </div>
+              <hr/>
+              <div>
+                <h3 className="text-lg font-medium text-destructive mb-2">Reset Account Data</h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  This action will permanently delete all your payment links, transactions, and payout accounts. 
+                  Your user profile and settings will remain. This action cannot be undone.
+                </p>
+                <AlertDialog open={isResetDataAlertOpen} onOpenChange={setIsResetDataAlertOpen}>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive">Reset All My Data</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete all your payment links, transactions, and payout accounts. 
+                        This action cannot be undone. Your user profile and settings will not be affected.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isResettingData}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleResetData} disabled={isResettingData} className={buttonVariants({variant: "destructive"})}>
+                        {isResettingData ? <><Spinner className="mr-2" /> Resetting...</> : "Yes, Reset My Data"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+      <SeedDataDialog open={isSeedDialogOpen} onOpenChange={setIsSeedDialogOpen} />
     </div>
   );
 };

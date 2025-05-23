@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, LinkIcon as LinkIconLucide, Settings, Landmark, LogOut, DatabaseZap } from 'lucide-react'; // Added DatabaseZap
+import { Home, LinkIcon as LinkIconLucide, Settings, Landmark, LogOut } from 'lucide-react'; 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -13,8 +13,7 @@ import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { AppLogo } from '@/components/shared/app-logo';
-import { SeedDataDialog } from './seed-data-dialog'; // Import SeedDataDialog
-import { useState } from 'react';
+
 
 interface NavItem {
   href: string;
@@ -39,7 +38,6 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
   const router = useRouter();
   const { user, loading } = useAuth();
   const { toast } = useToast();
-  const [isSeedDialogOpen, setIsSeedDialogOpen] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -143,18 +141,7 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
         <Separator className="bg-sidebar-border shrink-0" />
         
         <div className="p-4 space-y-2 mt-auto shrink-0">
-           <Button 
-              variant="ghost" 
-              className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              onClick={() => {
-                setIsSeedDialogOpen(true);
-                if (onLinkClick) onLinkClick(); // Close mobile sidebar if open
-              }}
-              disabled={loading || !user}
-            >
-              <DatabaseZap className="mr-2 h-5 w-5" />
-              Seed Data
-          </Button>
+           {/* Seed Data Button Removed */}
            <Button 
               variant="ghost" 
               className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -169,7 +156,7 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
           </Button>
         </div>
       </div>
-      <SeedDataDialog open={isSeedDialogOpen} onOpenChange={setIsSeedDialogOpen} />
+      {/* SeedDataDialog instance removed from here */}
     </>
   );
 }
