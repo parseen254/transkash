@@ -21,7 +21,7 @@ const PaymentFailedContent: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paymentLinkIdForRetry, setPaymentLinkIdForRetry] = useState<string | null>(null);
-  const [failureReason, setFailureReason] = useState<string | null>("Your payment could not be processed.");
+  const [failureReason, setFailureReason] = useState<string>("Your payment could not be processed.");
 
   useEffect(() => {
     const id = searchParams.get('paymentLinkId');
@@ -29,7 +29,7 @@ const PaymentFailedContent: React.FC = () => {
     
     setPaymentLinkIdForRetry(id); 
     if (reasonFromQuery) {
-      setFailureReason(reasonFromQuery);
+      setFailureReason(decodeURIComponent(reasonFromQuery)); // Decode the reason
     } 
 
     if (id) {
@@ -66,7 +66,6 @@ const PaymentFailedContent: React.FC = () => {
     if (paymentLinkIdForRetry) {
       router.push(`/payment/order?paymentLinkId=${paymentLinkIdForRetry}`);
     } else {
-      // Fallback if paymentLinkIdForRetry somehow isn't set
       router.push('/'); 
     }
   };
@@ -172,3 +171,4 @@ const PaymentFailedPage: NextPage = () => {
 
 export default PaymentFailedPage;
 
+    

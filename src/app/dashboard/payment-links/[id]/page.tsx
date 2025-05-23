@@ -4,7 +4,7 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState, useMemo, useRef } from 'react'; 
+import { useEffect, useState, useMemo, useRef, Suspense } from 'react'; 
 import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2, Share, Download } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -423,5 +423,12 @@ const PaymentLinkDetailsPage: NextPage = () => {
   );
 };
 
-export default PaymentLinkDetailsPage;
+const SuspendedPaymentLinkDetailsPage: NextPage = () => (
+  <Suspense fallback={<div className="flex justify-center items-center h-full p-8"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>}>
+    <PaymentLinkDetailsPage />
+  </Suspense>
+);
 
+export default SuspendedPaymentLinkDetailsPage;
+
+    

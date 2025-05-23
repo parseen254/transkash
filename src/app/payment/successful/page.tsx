@@ -131,7 +131,7 @@ const PaymentSuccessfulPage: NextPage = () => {
         </Button>
       </header>
       <main className="flex flex-col items-center justify-center flex-grow p-4 sm:p-8">
-        <Suspense fallback={
+         <Suspense fallback={
           <div className="flex flex-col items-center justify-center flex-grow">
             <Spinner className="h-10 w-10 text-primary" />
             <p className="mt-4 text-muted-foreground">Loading...</p>
@@ -146,3 +146,4 @@ const PaymentSuccessfulPage: NextPage = () => {
 
 export default PaymentSuccessfulPage;
 
+    

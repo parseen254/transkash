@@ -115,9 +115,6 @@ const DashboardPage: NextPage = () => {
         return { start: startOfYear(now), end: endOfDay(now), description: "This Year" };
       case "allTime":
       default:
-        // For "All Time", fetch up to a reasonable limit like 5 years back to avoid performance issues
-        // Or, for true "All Time" with potentially very large datasets, backend aggregation is better.
-        // Here, we'll simulate by going back far, but still cap it.
         return { start: subDays(now, 365 * 5), end: endOfDay(now), description: "All Time" };
     }
   }, [selectedDateRangePreset]);
@@ -169,8 +166,8 @@ const DashboardPage: NextPage = () => {
 
     setStatData([
       { title: 'Total Revenue', value: `KES ${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, periodDescription: currentPeriodDescription },
-      { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toString(), periodDescription: currentPeriodDescription },
-      { title: 'Active Payment Links', value: activePaymentLinksCount.toString(), periodDescription: "Currently" },
+      { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toLocaleString(), periodDescription: currentPeriodDescription },
+      { title: 'Active Payment Links', value: activePaymentLinksCount.toLocaleString(), periodDescription: "Currently" },
     ]);
     
     const last12MonthsKeys: string[] = [];
@@ -277,6 +274,7 @@ const DashboardPage: NextPage = () => {
     const paymentLinksQuery = query(
       collection(db, 'paymentLinks'), 
       where('userId', '==', user.uid),
+      // No date filtering for payment links themselves, as "Active Payment Links" count is independent of range
       orderBy('creationDate', 'desc') 
     );
     unsubscribeLinks = onSnapshot(paymentLinksQuery,

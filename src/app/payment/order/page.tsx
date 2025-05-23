@@ -135,7 +135,7 @@ const PaymentForOrderContent: React.FC = () => {
 
     const queryParams = new URLSearchParams({
       paymentLinkId: currentPaymentLink.id,
-      creatorUserId: currentPaymentLink.creatorUserId, 
+      creatorUserId: currentPaymentLink.creatorUserId || "UNKNOWN_CREATOR", 
       method: selectedPaymentMethod,
       amount: String(currentPaymentLink.amount),
       currency: currentPaymentLink.currency || 'KES',
@@ -150,8 +150,8 @@ const PaymentForOrderContent: React.FC = () => {
       queryParams.append('cardNumber', cardNumber.replace(/\s/g, '')); 
       const displayCardNum = `**** **** **** ${cardNumber.replace(/\s/g, '').slice(-4)}`;
       queryParams.append('displayCardNumber', displayCardNum);
-      queryParams.append('cardExpiry', cardExpiry); 
-      queryParams.append('cvv', cvv);
+      // Note: CVV and Expiry are NOT passed in query params for security.
+      // The processing page will simulate having them for the mock APIs.
     }
 
     router.push(`/payment/processing?${queryParams.toString()}`);
@@ -365,3 +365,4 @@ const PaymentForOrderPage: NextPage = () => {
 
 export default PaymentForOrderPage;
 
+    
