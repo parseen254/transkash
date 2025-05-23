@@ -15,16 +15,8 @@ import { Spinner } from '@/components/ui/spinner';
 import type { PaymentLink } from '@/lib/types';
 import { format, parse, isFuture, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
-
-// Dummy Data for Payment Links (simulates fetching from a backend based on paymentLinkId)
-const dummyPaymentLinks: PaymentLink[] = [
-  { id: 'pl_1', linkName: 'Invoice #1234 (The Coffee Shop)', reference: 'ORD1234567890', amount: '25.00', currency: 'KES', purpose: 'Coffee and Snacks', creationDate: new Date('2023-10-01').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 15)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_1', hasExpiry: true },
-  { id: 'pl_2', linkName: 'Product Sale - T-Shirt', reference: 'PROD050', amount: '1500', currency: 'KES', purpose: 'Online Store Purchase', creationDate: new Date('2023-10-05').toISOString(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 30)), status: 'Active', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_2', hasExpiry: true },
-  { id: 'pl_3', linkName: 'Monthly Subscription', reference: 'SUB003', amount: '2000', currency: 'KES', purpose: 'SaaS Subscription', creationDate: new Date('2023-09-20').toISOString(), status: 'Active', payoutAccountId: 'acc_2', shortUrl: '/payment/order?paymentLinkId=pl_3', hasExpiry: false },
-  { id: 'pl_expired', linkName: 'Expired Offer', reference: 'EXP001', amount: '100', currency: 'KES', purpose: 'Past Offer', creationDate: new Date('2023-01-01').toISOString(), expiryDate: new Date('2023-01-15'), status: 'Expired', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_expired', hasExpiry: true },
-  { id: 'pl_disabled', linkName: 'Disabled Service', reference: 'DIS001', amount: '500', currency: 'KES', purpose: 'Service Temporarily Unavailable', creationDate: new Date('2023-01-01').toISOString(), status: 'Disabled', payoutAccountId: 'acc_1', shortUrl: '/payment/order?paymentLinkId=pl_disabled', hasExpiry: false },
-];
-
+import { db } from '@/lib/firebase'; // Import db
+import { doc, getDoc, Timestamp } from 'firebase/firestore'; // Import Firestore functions
 
 interface PaymentOption {
   value: string;
@@ -63,24 +55,37 @@ const PaymentForOrderContent: React.FC = () => {
     if (paymentLinkId) {
       setLoadingLink(true);
       setErrorLoadingLink(null);
-      setTimeout(() => {
-        const foundLink = dummyPaymentLinks.find(link => link.id === paymentLinkId);
-        if (foundLink) {
-          if (foundLink.status !== 'Active') {
-            setErrorLoadingLink(`This payment link ("${foundLink.linkName}") is currently ${foundLink.status.toLowerCase()} and cannot be paid.`);
-            setCurrentPaymentLink(null);
-          } else if (foundLink.hasExpiry && foundLink.expiryDate && new Date(foundLink.expiryDate) < new Date()) {
-            setErrorLoadingLink(`Payment link "${foundLink.linkName}" expired on ${format(new Date(foundLink.expiryDate), 'PPP')}.`);
-            setCurrentPaymentLink(null);
+      
+      const fetchLinkDetails = async () => {
+        try {
+          const linkDocRef = doc(db, 'paymentLinks', paymentLinkId);
+          const docSnap = await getDoc(linkDocRef);
+
+          if (docSnap.exists()) {
+            const linkData = { id: docSnap.id, ...docSnap.data() } as PaymentLink;
+            
+            if (linkData.status !== 'Active') {
+              setErrorLoadingLink(`This payment link ("${linkData.linkName}") is currently ${linkData.status.toLowerCase()} and cannot be paid.`);
+              setCurrentPaymentLink(null);
+            } else if (linkData.hasExpiry && linkData.expiryDate && linkData.expiryDate instanceof Timestamp && linkData.expiryDate.toDate() < new Date()) {
+              setErrorLoadingLink(`Payment link "${linkData.linkName}" expired on ${format(linkData.expiryDate.toDate(), 'PPP')}.`);
+              setCurrentPaymentLink(null);
+            } else {
+              setCurrentPaymentLink(linkData);
+            }
           } else {
-            setCurrentPaymentLink(foundLink);
+            setErrorLoadingLink("Payment link not found or is invalid.");
+            setCurrentPaymentLink(null);
           }
-        } else {
-          setErrorLoadingLink("Payment link not found or is invalid.");
+        } catch (err) {
+          console.error("Error fetching payment link:", err);
+          setErrorLoadingLink("An error occurred while fetching payment link details.");
           setCurrentPaymentLink(null);
+        } finally {
+          setLoadingLink(false);
         }
-        setLoadingLink(false);
-      }, 700);
+      };
+      fetchLinkDetails();
     } else {
       setErrorLoadingLink("No payment link ID provided. Please use a valid payment link.");
       setCurrentPaymentLink(null);
@@ -91,15 +96,22 @@ const PaymentForOrderContent: React.FC = () => {
   const isCardFormValid = useCallback(() => {
     const expiryPattern = /^(0[1-9]|1[0-2])\/\d{2}$/; // MM/YY
     if (!expiryPattern.test(cardExpiry)) return false;
-    const [monthStr, yearStr] = cardExpiry.split('/');
-    const parsedFullYear = `20${yearStr}`; // Assumes 21st century
-    const expiryDateObject = parse(`${monthStr}/01/${parsedFullYear}`, 'MM/dd/yyyy', new Date());
     
+    const [monthStr, yearStr] = cardExpiry.split('/');
+    const parsedFullYear = parseInt(`20${yearStr}`, 10);
+    const parsedMonth = parseInt(monthStr, 10);
+
+    if (isNaN(parsedMonth) || isNaN(parsedFullYear) || parsedMonth < 1 || parsedMonth > 12) return false;
+
+    // Check if expiry date is in the future (end of expiry month)
+    const expiryDateObject = new Date(parsedFullYear, parsedMonth -1); // Month is 0-indexed
+    const lastDayOfExpiryMonth = new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() + 1, 0);
+
     return (
       cardNumber.replace(/\s/g, '').length >= 13 &&
       cvv.length >= 3 && cvv.length <= 4 &&
-      isValid(expiryDateObject) && 
-      isFuture(new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() + 1, 0 )) // Check end of expiry month
+      isValid(lastDayOfExpiryMonth) && 
+      isFuture(lastDayOfExpiryMonth)
     );
   }, [cardNumber, cardExpiry, cvv]);
 
@@ -109,7 +121,7 @@ const PaymentForOrderContent: React.FC = () => {
       return;
     }
 
-    if (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?(7\d{8})$/)) {
+    if (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?([17]\d{8})$/)) {
       toast({ title: "Invalid Phone Number", description: "Please enter a valid M-Pesa phone number (e.g., 07XXXXXXXX).", variant: "destructive" });
       return;
     }
@@ -125,44 +137,44 @@ const PaymentForOrderContent: React.FC = () => {
     const queryParams = new URLSearchParams({
       paymentLinkId: currentPaymentLink.id,
       method: selectedPaymentMethod,
-      amount: currentPaymentLink.amount,
+      amount: String(currentPaymentLink.amount),
       currency: currentPaymentLink.currency || 'KES',
       reference: currentPaymentLink.reference,
     });
 
     if (selectedPaymentMethod === 'mpesa_stk') {
-      queryParams.append('mpesaPhoneNumber', mpesaPhoneNumber);
-      const redactedPhone = `${mpesaPhoneNumber.substring(0, 2)}****${mpesaPhoneNumber.substring(mpesaPhoneNumber.length - 4)}`;
-      queryParams.append('mpesaPhoneNumberDisplay', redactedPhone);
+      queryParams.append('mpesaPhoneNumber', mpesaPhoneNumber); // Full number for API
+      const redactedPhone = `${mpesaPhoneNumber.substring(0, mpesaPhoneNumber.length > 7 ? 3 : 2)}****${mpesaPhoneNumber.substring(mpesaPhoneNumber.length - 2)}`;
+      queryParams.append('mpesaPhoneNumberDisplay', redactedPhone); // Redacted for display on processing page
     } else if (selectedPaymentMethod === 'card') {
-      queryParams.append('cardNumber', cardNumber.replace(/\s/g, '')); // Send full card number to processing page (mock API needs it)
+      queryParams.append('cardNumber', cardNumber.replace(/\s/g, '')); // Full number for API
       const displayCardNum = `**** **** **** ${cardNumber.replace(/\s/g, '').slice(-4)}`;
       queryParams.append('displayCardNumber', displayCardNum);
-      // DO NOT pass cardExpiry or cvv in query params for security
-      // The processing page will use mock values for these for the mock API call
+      // Expiry and CVV are passed via query params to the mock processing page for this demo
+      // In a real app, this would be handled differently (e.g. tokenization, server-side handling)
+      queryParams.append('cardExpiry', cardExpiry); // MM/YY
+      queryParams.append('cvv', cvv);
     }
 
     router.push(`/payment/processing?${queryParams.toString()}`);
   };
 
   const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
-    if (value.length > 4) value = value.slice(0, 4); // MMYY format limit
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 4) value = value.slice(0, 4);
 
     if (value.length > 2) {
-      // Format as MM/YY
       value = `${value.slice(0, 2)}/${value.slice(2)}`;
     } else if (value.length === 2 && cardExpiry.length === 1 && !cardExpiry.includes('/')) {
-      // Auto-add slash after MM if user is typing and hasn't added one
       value = `${value}/`;
     }
     setCardExpiry(value);
   };
 
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value.replace(/\s/g, ''); // Remove existing spaces
-    if (rawValue.length > 19) return; // Max card length
-    const formattedValue = rawValue.replace(/(\d{4})/g, '$1 ').trim(); // Add space every 4 digits
+    const rawValue = e.target.value.replace(/\s/g, '');
+    if (rawValue.length > 19) return;
+    const formattedValue = rawValue.replace(/(\d{4})/g, '$1 ').trim();
     setCardNumber(formattedValue);
   };
 
@@ -188,13 +200,10 @@ const PaymentForOrderContent: React.FC = () => {
   }
 
   const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
-  let payButtonText = "Proceed to Payment";
+  let payButtonText = `Pay ${currentPaymentLink.currency} ${currentPaymentLink.amount.toFixed(2)}`;
   let PayButtonIcon = CreditCard;
 
-  if (selectedPaymentMethod === 'card') {
-    payButtonText = `Pay ${currentPaymentLink.currency} ${parseFloat(currentPaymentLink.amount).toFixed(2)}`;
-    PayButtonIcon = CreditCard;
-  } else if (selectedPaymentMethod === 'mpesa_stk') {
+  if (selectedPaymentMethod === 'mpesa_stk') {
     payButtonText = "Pay with M-Pesa (STK Push)";
     PayButtonIcon = Smartphone;
   } else if (selectedPaymentMethod === 'mpesa_paybill') {
@@ -228,12 +237,12 @@ const PaymentForOrderContent: React.FC = () => {
         <hr className="border-border my-2 !mt-3 !mb-3" />
         <div className="flex justify-between items-baseline">
           <span className="text-muted-foreground">Total</span>
-          <span className="font-bold text-foreground text-xl">{currentPaymentLink.currency} {parseFloat(currentPaymentLink.amount).toFixed(2)}</span>
+          <span className="font-bold text-foreground text-xl">{currentPaymentLink.currency} {currentPaymentLink.amount.toFixed(2)}</span>
         </div>
-        {currentPaymentLink.hasExpiry && currentPaymentLink.expiryDate && (
+        {currentPaymentLink.hasExpiry && currentPaymentLink.expiryDate && currentPaymentLink.expiryDate instanceof Timestamp && (
           <div className="flex justify-between text-xs">
             <span className="text-muted-foreground">Due by</span>
-            <span className="font-medium text-muted-foreground">{format(new Date(currentPaymentLink.expiryDate), 'PPP p')}</span>
+            <span className="font-medium text-muted-foreground">{format(currentPaymentLink.expiryDate.toDate(), 'PPP p')}</span>
           </div>
         )}
       </div>
@@ -277,7 +286,7 @@ const PaymentForOrderContent: React.FC = () => {
                 <li>Select Lipa na M-Pesa, then Pay Bill</li>
                 <li>Enter Business Number: <strong className="text-foreground">{MOCK_PAYBILL_NUMBER}</strong></li>
                 <li>Enter Account Number: <strong className="text-foreground">{currentPaymentLink.reference}</strong></li>
-                <li>Enter Amount: <strong className="text-foreground">{currentPaymentLink.currency} {parseFloat(currentPaymentLink.amount).toFixed(2)}</strong></li>
+                <li>Enter Amount: <strong className="text-foreground">{currentPaymentLink.currency} {currentPaymentLink.amount.toFixed(2)}</strong></li>
                 <li>Enter your M-Pesa PIN and confirm</li>
             </ul>
         </div>
@@ -289,7 +298,7 @@ const PaymentForOrderContent: React.FC = () => {
            <div>
                 <Label htmlFor="cardNumber" className="text-sm font-medium text-muted-foreground">Card Number</Label>
                 <Input id="cardNumber" type="text" placeholder="0000 0000 0000 0000" value={cardNumber}
-                    onChange={handleCardNumberChange} maxLength={23} // Max length for formatted (incl. spaces)
+                    onChange={handleCardNumberChange} maxLength={23} 
                     autoComplete="cc-number"
                     className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
            </div>
@@ -315,7 +324,7 @@ const PaymentForOrderContent: React.FC = () => {
       {selectedPaymentMethod && (
         <>
             <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg"
-                    disabled={isSubmittingPayment || (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?(7\d{8})$/)) || (selectedPaymentMethod === 'card' && !isCardFormValid())}>
+                    disabled={isSubmittingPayment || (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?([17]\d{8})$/)) || (selectedPaymentMethod === 'card' && !isCardFormValid())}>
                 {isSubmittingPayment ? <Spinner className="mr-2" /> : <PayButtonIcon className="mr-2 h-5 w-5" />}
                 {isSubmittingPayment ? 'Processing...' : payButtonText}
             </Button>
@@ -354,4 +363,6 @@ const PaymentForOrderPage: NextPage = () => {
 };
 
 export default PaymentForOrderPage;
+
+
     
