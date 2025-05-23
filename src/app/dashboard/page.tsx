@@ -12,7 +12,7 @@ import { LineChart, BarChart, CartesianGrid, XAxis, YAxis, Line, Bar, Tooltip as
 import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { useEffect, useState, useMemo } from 'react';
-import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs, Unsubscribe } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
@@ -23,7 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 interface StatCardData {
   title: string;
   value: string;
-  change?: string; // Make change optional as it's often N/A
+  change?: string;
   positiveChange?: boolean;
 }
 
@@ -34,9 +34,9 @@ interface AggregatedProductData {
 }
 
 interface TransactionStatusData {
-  name: string; // e.g., 'Completed', 'Pending', 'Failed'
-  value: number; // count of transactions
-  fill: string; // color for the pie chart segment
+  name: string;
+  value: number;
+  fill: string;
 }
 
 const initialStatData: StatCardData[] = [
@@ -52,7 +52,6 @@ const transactionStatusChartConfig = {
   Pending: { label: "Pending", color: "hsl(var(--chart-3))" },
   Failed: { label: "Failed", color: "hsl(var(--chart-5))" },
 } satisfies ChartConfig;
-
 
 const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: () => void; className?: string }) => (
   <div className={cn("flex flex-col items-center justify-center text-center h-full gap-2 min-h-[180px]", className)}>
@@ -75,7 +74,6 @@ const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: ()
   </div>
 );
 
-
 const DashboardPage: NextPage = () => {
   const { user, loading: authLoading, initialLoadComplete } = useAuth();
   const router = useRouter();
@@ -90,13 +88,13 @@ const DashboardPage: NextPage = () => {
   const [topSellingProductsData, setTopSellingProductsData] = useState<AggregatedProductData[]>([]);
   const [transactionStatusData, setTransactionStatusData] = useState<TransactionStatusData[]>([]);
   const [loadingStatsAndCharts, setLoadingStatsAndCharts] = useState(true);
-  const [fetchedAllUserTransactions, setFetchedAllUserTransactions] = useState<Transaction[]>([]); // New state for all transactions
-
+  const [fetchedAllUserTransactions, setFetchedAllUserTransactions] = useState<Transaction[]>([]);
+  
   // Fetch latest 5 transactions for the table (real-time)
   useEffect(() => {
     if (!initialLoadComplete || !user) {
-      if (initialLoadComplete && !user) router.push('/login');
       setLoadingRecentTransactions(!initialLoadComplete || authLoading);
+      if (initialLoadComplete && !user) router.push('/login');
       return;
     }
 
@@ -125,152 +123,203 @@ const DashboardPage: NextPage = () => {
     return () => unsubscribe();
   }, [user, initialLoadComplete, authLoading, router, toast]);
 
-  // Fetch and aggregate data for stats and charts (one-time fetch on load/user change/refresh)
-  const fetchDataForStatsAndCharts = async () => {
-    if (!user) return;
+  const processDashboardData = (
+    allUserTransactions: Transaction[],
+    userPaymentLinks: PaymentLink[]
+  ) => {
     setLoadingStatsAndCharts(true);
+    setFetchedAllUserTransactions(allUserTransactions);
 
-    try {
-      // --- Fetch all payment links for the user ---
-      const paymentLinksQuery = query(collection(db, 'paymentLinks'), where('userId', '==', user.uid));
-      const paymentLinksSnapshot = await getDocs(paymentLinksQuery);
-      const userPaymentLinks: PaymentLink[] = [];
-      paymentLinksSnapshot.forEach(doc => {
-        userPaymentLinks.push({ id: doc.id, ...doc.data() } as PaymentLink);
-      });
+    const completedTransactions = allUserTransactions.filter(txn => txn.status === 'Completed');
 
-      // --- Fetch transactions from the last year ---
-      const oneYearAgo = new Date();
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      const oneYearAgoTimestamp = Timestamp.fromDate(oneYearAgo);
+    // --- Aggregate for Stat Cards ---
+    let totalRevenue = 0;
+    completedTransactions.forEach(txn => { totalRevenue += txn.amount; });
+    const totalCompletedTransactionsCount = completedTransactions.length;
+    const activePaymentLinksCount = userPaymentLinks.filter(link => link.status === 'Active').length;
+    
+    setStatData([
+      { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}` },
+      { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toString() },
+      { title: 'Active Payment Links', value: activePaymentLinksCount.toString() },
+    ]);
 
-      const allTransactionsQuery = query(
-        collection(db, 'transactions'),
-        where('userId', '==', user.uid),
-        where('createdAt', '>=', oneYearAgoTimestamp),
-        orderBy('createdAt', 'asc')
-      );
-      const allTransactionsSnapshot = await getDocs(allTransactionsQuery);
-      const allUserTransactions: Transaction[] = []; // Local variable for this function scope
-      allTransactionsSnapshot.forEach(doc => {
-        allUserTransactions.push({ id: doc.id, ...doc.data() } as Transaction);
-      });
-      setFetchedAllUserTransactions(allUserTransactions); // Set state here
-      
-      const completedTransactions = allUserTransactions.filter(txn => txn.status === 'Completed');
-
-      // --- Aggregate for Stat Cards ---
-      let totalRevenue = 0;
-      completedTransactions.forEach(txn => { totalRevenue += txn.amount; });
-      const totalCompletedTransactionsCount = completedTransactions.length;
-      const activePaymentLinksCount = userPaymentLinks.filter(link => link.status === 'Active').length;
-      
-      setStatData([
-        { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}` },
-        { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toString() },
-        { title: 'Active Payment Links', value: activePaymentLinksCount.toString() },
-      ]);
-
-      // --- Aggregate for Monthly Revenue Chart ---
-      const last12MonthsKeys: string[] = [];
-      const last12MonthLabels: string[] = [];
-      for (let i = 11; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(1); 
-          d.setMonth(d.getMonth() - i);
-          last12MonthsKeys.push(format(d, 'yyyy-MM'));
-          last12MonthLabels.push(format(d, 'MMM'));
-      }
-      const monthlyAgg: { [key: string]: number } = {};
-      last12MonthsKeys.forEach(key => monthlyAgg[key] = 0);
-      completedTransactions.forEach(txn => {
-        if (txn.createdAt instanceof Timestamp) {
-          const date = txn.createdAt.toDate();
-          const monthKey = format(date, 'yyyy-MM');
-          if (monthlyAgg.hasOwnProperty(monthKey)) {
-            monthlyAgg[monthKey] += txn.amount;
-          }
-        }
-      });
-      setMonthlyRevenueData(last12MonthsKeys.map((key, index) => ({
-          month: last12MonthLabels[index],
-          revenue: monthlyAgg[key] || 0 
-      })));
-      
-      // --- Aggregate for Quarterly Sales Chart ---
-      const quarterlyAgg: { [key: string]: { sales: number; quarterLabel: string } } = {};
-      const currentYear = new Date().getFullYear();
-      const currentMonth = new Date().getMonth(); 
-      const currentQuarter = Math.floor(currentMonth / 3); 
-
-      for (let i = 3; i >= 0; i--) { 
-          let yearForQuarter = currentYear;
-          let qNumForQuarter = currentQuarter - i;
-          
-          if (qNumForQuarter < 0) {
-              qNumForQuarter += 4;
-              yearForQuarter -=1;
-          }
-          const quarterKey = `${yearForQuarter}-Q${qNumForQuarter + 1}`;
-          quarterlyAgg[quarterKey] = { sales: 0, quarterLabel: `Q${qNumForQuarter + 1} ${yearForQuarter}` };
-      }
-      completedTransactions.forEach(txn => {
-        if (txn.createdAt instanceof Timestamp) {
-          const date = txn.createdAt.toDate();
-          const year = date.getFullYear();
-          const qNum = Math.floor(date.getMonth() / 3) + 1;
-          const quarterKey = `${year}-Q${qNum}`;
-          if (quarterlyAgg.hasOwnProperty(quarterKey)) {
-            quarterlyAgg[quarterKey].sales += txn.amount;
-          }
-        }
-      });
-      setQuarterlySalesData(Object.keys(quarterlyAgg).sort().map(key => ({ name: quarterlyAgg[key].quarterLabel.split(' ')[0], sales: quarterlyAgg[key].sales || 0 })));
-
-      // --- Aggregate for Top Selling Products Chart (based on Payment Link Name) ---
-      const productSales: { [linkName: string]: number } = {};
-      completedTransactions.forEach(txn => {
-        const link = userPaymentLinks.find(pl => pl.id === txn.paymentLinkId);
-        if (link && link.linkName) {
-          productSales[link.linkName] = (productSales[link.linkName] || 0) + txn.amount;
-        }
-      });
-      const sortedProducts = Object.entries(productSales).sort(([, a], [, b]) => b - a).slice(0, 3);
-      let maxProductRevenue = sortedProducts.length > 0 ? sortedProducts[0][1] : 0;
-      setTopSellingProductsData(sortedProducts.map(([name, revenue]) => ({
-        name,
-        value: maxProductRevenue > 0 ? (revenue / maxProductRevenue) * 100 : 0,
-        displayValue: `KES ${revenue.toFixed(2)}`
-      })));
-
-      // --- Aggregate for Transaction Status Pie Chart ---
-      const statusCounts = { Completed: 0, Pending: 0, Failed: 0 };
-      allUserTransactions.forEach(txn => { // Use allUserTransactions from this scope
-        if (txn.status === 'Completed') statusCounts.Completed++;
-        else if (txn.status === 'Pending') statusCounts.Pending++;
-        else if (txn.status === 'Failed') statusCounts.Failed++;
-      });
-      setTransactionStatusData([
-        { name: 'Completed', value: statusCounts.Completed, fill: 'hsl(var(--chart-1))' },
-        { name: 'Pending', value: statusCounts.Pending, fill: 'hsl(var(--chart-3))' },
-        { name: 'Failed', value: statusCounts.Failed, fill: 'hsl(var(--chart-5))' },
-      ].filter(d => d.value > 0)); 
-
-
-    } catch (error) {
-      console.error("Error aggregating dashboard data:", error);
-      toast({ title: "Error", description: "Could not load dashboard analytics.", variant: "destructive" });
-    } finally {
-      setLoadingStatsAndCharts(false);
+    // --- Aggregate for Monthly Revenue Chart ---
+    const last12MonthsKeys: string[] = [];
+    const last12MonthLabels: string[] = [];
+    for (let i = 11; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(1); 
+        d.setMonth(d.getMonth() - i);
+        last12MonthsKeys.push(format(d, 'yyyy-MM'));
+        last12MonthLabels.push(format(d, 'MMM'));
     }
+    const monthlyAgg: { [key: string]: number } = {};
+    last12MonthsKeys.forEach(key => monthlyAgg[key] = 0);
+    completedTransactions.forEach(txn => {
+      if (txn.createdAt instanceof Timestamp) {
+        const date = txn.createdAt.toDate();
+        const monthKey = format(date, 'yyyy-MM');
+        if (monthlyAgg.hasOwnProperty(monthKey)) {
+          monthlyAgg[monthKey] += txn.amount;
+        }
+      }
+    });
+    setMonthlyRevenueData(last12MonthsKeys.map((key, index) => ({
+        month: last12MonthLabels[index],
+        revenue: monthlyAgg[key] || 0 
+    })));
+    
+    // --- Aggregate for Quarterly Sales Chart ---
+    const quarterlyAgg: { [key: string]: { sales: number; quarterLabel: string } } = {};
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); 
+    const currentQuarter = Math.floor(currentMonth / 3); 
+
+    for (let i = 3; i >= 0; i--) { 
+        let yearForQuarter = currentYear;
+        let qNumForQuarter = currentQuarter - i;
+        
+        if (qNumForQuarter < 0) {
+            qNumForQuarter += 4;
+            yearForQuarter -=1;
+        }
+        const quarterKey = `${yearForQuarter}-Q${qNumForQuarter + 1}`;
+        quarterlyAgg[quarterKey] = { sales: 0, quarterLabel: `Q${qNumForQuarter + 1} ${yearForQuarter}` };
+    }
+    completedTransactions.forEach(txn => {
+      if (txn.createdAt instanceof Timestamp) {
+        const date = txn.createdAt.toDate();
+        const year = date.getFullYear();
+        const qNum = Math.floor(date.getMonth() / 3) + 1;
+        const quarterKey = `${year}-Q${qNum}`;
+        if (quarterlyAgg.hasOwnProperty(quarterKey)) {
+          quarterlyAgg[quarterKey].sales += txn.amount;
+        }
+      }
+    });
+    setQuarterlySalesData(Object.keys(quarterlyAgg).sort().map(key => ({ name: quarterlyAgg[key].quarterLabel.split(' ')[0], sales: quarterlyAgg[key].sales || 0 })));
+
+    // --- Aggregate for Top Selling Products Chart (based on Payment Link Name) ---
+    const productSales: { [linkName: string]: number } = {};
+    completedTransactions.forEach(txn => {
+      const link = userPaymentLinks.find(pl => pl.id === txn.paymentLinkId);
+      if (link && link.linkName) {
+        productSales[link.linkName] = (productSales[link.linkName] || 0) + txn.amount;
+      }
+    });
+    const sortedProducts = Object.entries(productSales).sort(([, a], [, b]) => b - a).slice(0, 3);
+    let maxProductRevenue = sortedProducts.length > 0 ? sortedProducts[0][1] : 0;
+    setTopSellingProductsData(sortedProducts.map(([name, revenue]) => ({
+      name,
+      value: maxProductRevenue > 0 ? (revenue / maxProductRevenue) * 100 : 0,
+      displayValue: `KES ${revenue.toFixed(2)}`
+    })));
+
+    // --- Aggregate for Transaction Status Pie Chart ---
+    const statusCounts = { Completed: 0, Pending: 0, Failed: 0 };
+    allUserTransactions.forEach(txn => {
+      if (txn.status === 'Completed') statusCounts.Completed++;
+      else if (txn.status === 'Pending') statusCounts.Pending++;
+      else if (txn.status === 'Failed') statusCounts.Failed++;
+    });
+    setTransactionStatusData([
+      { name: 'Completed', value: statusCounts.Completed, fill: 'hsl(var(--chart-1))' },
+      { name: 'Pending', value: statusCounts.Pending, fill: 'hsl(var(--chart-3))' },
+      { name: 'Failed', value: statusCounts.Failed, fill: 'hsl(var(--chart-5))' },
+    ].filter(d => d.value > 0)); 
+
+    setLoadingStatsAndCharts(false);
   };
   
+  // Fetch and aggregate data for stats and charts (real-time via onSnapshot)
   useEffect(() => {
-    if (user && initialLoadComplete) {
-      fetchDataForStatsAndCharts();
+    if (!user || !initialLoadComplete) {
+      setLoadingStatsAndCharts(!initialLoadComplete || authLoading);
+      return () => {}; // Return empty cleanup if not ready
     }
+
+    setLoadingStatsAndCharts(true);
+    let isFirstLoad = true;
+
+    // --- Listener for Payment Links ---
+    const paymentLinksQuery = query(collection(db, 'paymentLinks'), where('userId', '==', user.uid));
+    const unsubscribePaymentLinks = onSnapshot(paymentLinksQuery, 
+      (linksSnapshot) => {
+        const userPaymentLinks: PaymentLink[] = [];
+        linksSnapshot.forEach(doc => {
+          userPaymentLinks.push({ id: doc.id, ...doc.data() } as PaymentLink);
+        });
+        
+        // Re-process with current transactions if links change
+        // (this assumes transactions are already being listened to separately or are fetched once)
+        // For a fully reactive system, this might trigger a re-fetch or re-processing of transactions if needed
+        // Here, we'll re-process with the current `fetchedAllUserTransactions` state
+        processDashboardData(fetchedAllUserTransactions, userPaymentLinks); 
+        if (isFirstLoad) setLoadingStatsAndCharts(false); // Only set loading to false on first load from links listener
+
+      }, 
+      (error) => {
+        console.error("Error fetching payment links for dashboard:", error);
+        toast({ title: "Error", description: "Could not load payment link data.", variant: "destructive" });
+        setLoadingStatsAndCharts(false);
+      }
+    );
+
+    // --- Listener for Transactions (last year) ---
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const oneYearAgoTimestamp = Timestamp.fromDate(oneYearAgo);
+
+    const allTransactionsQuery = query(
+      collection(db, 'transactions'),
+      where('userId', '==', user.uid),
+      where('createdAt', '>=', oneYearAgoTimestamp),
+      orderBy('createdAt', 'asc') // Order by for consistency if needed by aggregation
+    );
+    const unsubscribeTransactions = onSnapshot(allTransactionsQuery, 
+      async (transactionsSnapshot) => { // Made async to await getDocs for links inside
+        const allUserTransactions: Transaction[] = [];
+        transactionsSnapshot.forEach(doc => {
+          allUserTransactions.push({ id: doc.id, ...doc.data() } as Transaction);
+        });
+
+        // Fetch current payment links to pass to processDashboardData
+        // This is a one-time fetch for links within the transaction listener's scope
+        // Ideally, you'd manage links and transactions state more globally or pass them differently
+        // For simplicity here, we refetch links if transactions update, to ensure data consistency
+        const currentPaymentLinksQuery = query(collection(db, 'paymentLinks'), where('userId', '==', user.uid));
+        const currentPaymentLinksSnap = await getDocs(currentPaymentLinksQuery);
+        const currentUserPaymentLinks: PaymentLink[] = [];
+        currentPaymentLinksSnap.forEach(doc => {
+            currentUserPaymentLinks.push({ id: doc.id, ...doc.data()} as PaymentLink);
+        });
+
+        processDashboardData(allUserTransactions, currentUserPaymentLinks);
+        if (isFirstLoad) setLoadingStatsAndCharts(false); // Only set loading to false on first load from transactions listener
+        isFirstLoad = false; // After first full processing
+      },
+      (error) => {
+        console.error("Error fetching transactions for dashboard:", error);
+        toast({ title: "Error", description: "Could not load transaction data.", variant: "destructive" });
+        setLoadingStatsAndCharts(false);
+      }
+    );
+    
+    return () => {
+      unsubscribePaymentLinks();
+      unsubscribeTransactions();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, initialLoadComplete]);
+  }, [user, initialLoadComplete, toast]); // Removed processDashboardData from deps to avoid loops
+
+  const handleRefreshAllData = () => {
+     if (!user || !initialLoadComplete) return;
+     // This function would manually re-trigger a fetch, but since we use onSnapshot,
+     // data should be live. For a manual refresh of getDocs-based approach, it would be:
+     // fetchDataWithGetDocs(); // A hypothetical function that uses getDocs
+     toast({title: "Data is Live", description: "Dashboard data updates in real-time."})
+  };
 
 
   if (authLoading || !initialLoadComplete || (!user && initialLoadComplete)) {
@@ -298,9 +347,9 @@ const DashboardPage: NextPage = () => {
             <h1 className="text-[32px] font-bold tracking-light text-foreground">Dashboard</h1>
             <p className="text-muted-foreground text-sm">Overview of your business performance</p>
         </div>
-        <Button onClick={fetchDataForStatsAndCharts} disabled={loadingStatsAndCharts}>
+        <Button onClick={handleRefreshAllData} disabled={loadingStatsAndCharts}>
             <RefreshCw className={cn("mr-2 h-4 w-4", loadingStatsAndCharts && "animate-spin")} />
-            {loadingStatsAndCharts ? "Refreshing..." : "Refresh Data"}
+            {loadingStatsAndCharts ? "Loading..." : "Refresh Data"}
         </Button>
       </div>
 
@@ -395,7 +444,7 @@ const DashboardPage: NextPage = () => {
                   </ResponsiveContainer>
                 </ChartContainer>
               ) : (
-                <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
+                <NoChartDataDisplay onRefreshClick={handleRefreshAllData} />
               )}
             </CardContent>
           </Card>
@@ -423,7 +472,7 @@ const DashboardPage: NextPage = () => {
                       </ResponsiveContainer>
                     </ChartContainer>
                 ) : (
-                     <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
+                     <NoChartDataDisplay onRefreshClick={handleRefreshAllData} />
                 )}
             </CardContent>
           </Card>
@@ -453,7 +502,7 @@ const DashboardPage: NextPage = () => {
                         ))}
                     </div>
                 ) : (
-                     <NoChartDataDisplay className="py-6" onRefreshClick={fetchDataForStatsAndCharts} />
+                     <NoChartDataDisplay className="py-6" onRefreshClick={handleRefreshAllData} />
                 )}
             </CardContent>
           </Card>
@@ -482,7 +531,7 @@ const DashboardPage: NextPage = () => {
                   </ResponsiveContainer>
                 </ChartContainer>
               ) : (
-                <NoChartDataDisplay onRefreshClick={fetchDataForStatsAndCharts} />
+                <NoChartDataDisplay onRefreshClick={handleRefreshAllData} />
               )}
             </CardContent>
           </Card>
@@ -493,6 +542,3 @@ const DashboardPage: NextPage = () => {
 };
 
 export default DashboardPage;
-
-
-    
