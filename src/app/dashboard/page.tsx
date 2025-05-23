@@ -13,9 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { Transaction, PaymentLink } from '@/lib/types';
 import { useAuth } from '@/contexts/auth-context';
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDocs, startOfDay, endOfDay, subDays, startOfYear, endOfYear, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { format, startOfDay, endOfDay, subDays, startOfYear, endOfYear, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'date-fns';
+import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -110,11 +110,9 @@ const DashboardPage: NextPage = () => {
       case "last90":
         return { start: startOfDay(subDays(now, 89)), end: endOfDay(now), description: "Last 90 Days" };
       case "lastYear":
-        return { start: startOfYear(now), end: endOfYear(now), description: "This Year" };
+        return { start: startOfYear(now), end: endOfDay(now), description: "This Year" };
       case "allTime":
       default:
-        // For "All Time", we might want to avoid querying literally *all* data
-        // if performance is a concern. For now, let's use a very early date.
         return { start: new Date(0), end: endOfDay(now), description: "All Time" };
     }
   }, [selectedDateRangePreset]);
@@ -165,12 +163,11 @@ const DashboardPage: NextPage = () => {
     const activePaymentLinksCount = paymentLinks.filter(link => link.status === 'Active').length;
 
     setStatData([
-      { title: 'Total Revenue', value: `KES ${totalRevenue.toFixed(2)}`, periodDescription: currentPeriodDescription },
+      { title: 'Total Revenue', value: `KES ${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, periodDescription: currentPeriodDescription },
       { title: 'Total Completed Transactions', value: totalCompletedTransactionsCount.toString(), periodDescription: currentPeriodDescription },
       { title: 'Active Payment Links', value: activePaymentLinksCount.toString(), periodDescription: "Currently" },
     ]);
     
-    // Monthly Revenue (Last 12 Months regardless of selectedDateRangePreset for this chart)
     const last12MonthsKeys: string[] = [];
     const last12MonthLabels: string[] = [];
     const baseDateForMonthly = new Date(); 
@@ -198,7 +195,6 @@ const DashboardPage: NextPage = () => {
         revenue: monthlyAgg[key] || 0
     })));
 
-    // Quarterly Sales (Last 4 Quarters regardless of selectedDateRangePreset for this chart)
     const quarterlyAgg: { [key: string]: { sales: number; quarterLabel: string } } = {};
     const baseDateForQuarterly = new Date();
     const currentYear = baseDateForQuarterly.getFullYear();
@@ -230,8 +226,6 @@ const DashboardPage: NextPage = () => {
     });
     setQuarterlySalesData(Object.keys(quarterlyAgg).sort().map(key => ({ name: quarterlyAgg[key].quarterLabel.split(' ')[0], sales: quarterlyAgg[key].sales || 0 })));
 
-
-    // Top Selling Payment Links (based on selected date range)
     const productSales: { [linkName: string]: number } = {};
     completedTransactions.forEach(txn => {
       const link = paymentLinks.find(pl => pl.id === txn.paymentLinkId);
@@ -245,11 +239,10 @@ const DashboardPage: NextPage = () => {
     
     setTopSellingProductsData(sortedProducts.map(([name, revenue]) => ({
       name,
-      value: maxProductRevenue > 0 ? (revenue / maxProductRevenue) * 100 : 0, // Percentage for progress bar
-      displayValue: `KES ${revenue.toFixed(2)}`
+      value: maxProductRevenue > 0 ? (revenue / maxProductRevenue) * 100 : 0, 
+      displayValue: `KES ${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     })));
 
-    // Transaction Status Breakdown (based on selected date range)
     const statusCounts = { Completed: 0, Pending: 0, Failed: 0 };
     transactions.forEach(txn => {
       if (txn.status === 'Completed') statusCounts.Completed++;
@@ -260,12 +253,10 @@ const DashboardPage: NextPage = () => {
       { name: 'Completed', value: statusCounts.Completed, fill: 'hsl(var(--chart-1))' },
       { name: 'Pending', value: statusCounts.Pending, fill: 'hsl(var(--chart-3))' },
       { name: 'Failed', value: statusCounts.Failed, fill: 'hsl(var(--chart-5))' },
-    ].filter(d => d.value > 0)); // Only include statuses with actual counts
+    ].filter(d => d.value > 0)); 
 
   }, [user, getDateRange]);
 
-
-  // Effect to fetch data for stats and charts, re-runs when user or date range changes
   useEffect(() => {
     if (!user || !initialLoadComplete) {
         setLoadingLinks(!initialLoadComplete || authLoading);
@@ -277,15 +268,10 @@ const DashboardPage: NextPage = () => {
     let unsubscribeLinks: () => void = () => {};
     let unsubscribeTransactions: () => void = () => {};
 
-    // Fetch Payment Links
     setLoadingLinks(true);
     const paymentLinksQuery = query(
       collection(db, 'paymentLinks'), 
       where('userId', '==', user.uid),
-      // For "Active Links" count, we need all active links, not just those created in the range
-      // However, for "Top Selling Links" chart, it makes sense to filter links by creation date or transactions within range.
-      // For simplicity now, we'll fetch all user links for the "Active Links" count.
-      // And transactions within range will determine "Top Selling Links".
       orderBy('creationDate', 'desc') 
     );
     unsubscribeLinks = onSnapshot(paymentLinksQuery,
@@ -304,14 +290,13 @@ const DashboardPage: NextPage = () => {
       }
     );
 
-    // Fetch Transactions for the selected date range
     setLoadingTransactionsData(true);
     const allTransactionsQuery = query(
       collection(db, 'transactions'),
       where('userId', '==', user.uid),
       where('createdAt', '>=', Timestamp.fromDate(startDate)),
       where('createdAt', '<=', Timestamp.fromDate(endDate)),
-      orderBy('createdAt', 'asc') // Fetch in ascending order for easier processing later if needed
+      orderBy('createdAt', 'asc')
     );
     unsubscribeTransactions = onSnapshot(allTransactionsQuery,
       (transactionsSnapshot) => {
@@ -335,7 +320,6 @@ const DashboardPage: NextPage = () => {
     };
   }, [user, initialLoadComplete, authLoading, toast, getDateRange]);
 
-  // Effect to process data when fetched data changes or initial load completes
   useEffect(() => {
     if (authLoading || !initialLoadComplete || !user || loadingLinks || loadingTransactionsData) {
       return; 
@@ -345,8 +329,6 @@ const DashboardPage: NextPage = () => {
 
 
   const handleRefreshAllData = () => {
-     // Since data is now real-time via onSnapshot, this button is more of a user affordance.
-     // We could potentially force a re-fetch if absolutely necessary, but generally not needed.
      toast({title: "Data is Live", description: "Dashboard analytics update in real-time based on the selected date range."})
   };
 
@@ -450,7 +432,7 @@ const DashboardPage: NextPage = () => {
                     <TableRow key={transaction.id} className="h-[72px]">
                       <TableCell className="px-4 py-2 text-sm text-muted-foreground">{formatDateDisplay(transaction.createdAt)}</TableCell>
                       <TableCell className="px-4 py-2 text-sm font-normal text-foreground">{transaction.customer}</TableCell>
-                      <TableCell className="px-4 py-2 text-sm text-muted-foreground">{transaction.currency} {transaction.amount.toFixed(2)}</TableCell>
+                      <TableCell className="px-4 py-2 text-sm text-muted-foreground">{transaction.currency} {transaction.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                       <TableCell className="px-4 py-2 text-sm">
                          <Badge variant="secondary" className="rounded-full h-8 px-4 text-sm font-medium bg-secondary text-secondary-foreground hover:bg-secondary/90 w-full justify-center max-w-[150px]">{transaction.status}</Badge>
                       </TableCell>
@@ -585,5 +567,4 @@ const DashboardPage: NextPage = () => {
 };
 
 export default DashboardPage;
-
     

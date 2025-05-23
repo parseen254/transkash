@@ -5,7 +5,7 @@ import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useMemo, useEffect } from 'react';
-import { PlusCircle, Edit, Trash2, Copy, MoreHorizontal, Search, Eye, Loader2 } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, Copy, MoreHorizontal, Search, Eye, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -22,14 +22,19 @@ import { collection, query, where, orderBy, onSnapshot, doc, deleteDoc, Timestam
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 
+const ITEMS_PER_PAGE = 5;
 
 const PaymentLinksTable: React.FC<{ 
   links: PaymentLink[], 
   title: string, 
   onDelete: (id: string, linkName: string) => void, 
   onCopy: (link: PaymentLink) => void,
-  isLoading: boolean
-}> = ({ links, title, onDelete, onCopy, isLoading }) => {
+  isLoading: boolean,
+  currentPage: number,
+  totalPages: number,
+  onNextPage: () => void,
+  onPreviousPage: () => void
+}> = ({ links, title, onDelete, onCopy, isLoading, currentPage, totalPages, onNextPage, onPreviousPage }) => {
   const router = useRouter();
 
   if (isLoading) {
@@ -46,7 +51,7 @@ const PaymentLinksTable: React.FC<{
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {[...Array(3)].map((_, i) => (
+                  {[...Array(ITEMS_PER_PAGE)].map((_, i) => (
                     <TableRow key={i} className="h-[60px]">
                       {[...Array(5)].map((_, j) => <TableCell key={j} className="px-4 py-2"><Skeleton className="h-5 w-full" /></TableCell>)}
                     </TableRow>
@@ -72,7 +77,7 @@ const PaymentLinksTable: React.FC<{
   const formatDateDisplay = (dateValue: Timestamp | Date | string | undefined | null) => {
     if (!dateValue) return 'N/A';
     const date = dateValue instanceof Timestamp ? dateValue.toDate() : new Date(dateValue as any);
-    return format(date, 'PP'); // Example format: Oct 17, 2023
+    return format(date, 'PP'); 
   };
 
 
@@ -109,7 +114,7 @@ const PaymentLinksTable: React.FC<{
                         {link.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="px-4 py-2 text-sm text-muted-foreground">{link.currency} {link.amount.toFixed(2)}</TableCell>
+                    <TableCell className="px-4 py-2 text-sm text-muted-foreground">{link.currency} {link.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                     <TableCell className="px-4 py-2 text-sm text-muted-foreground">
                       {formatDateDisplay(link.creationDate)}
                     </TableCell>
@@ -162,6 +167,13 @@ const PaymentLinksTable: React.FC<{
             </Table>
           </div>
         </CardContent>
+         {totalPages > 1 && (
+            <div className="flex items-center justify-between p-4 border-t border-border">
+              <Button variant="outline" onClick={onPreviousPage} disabled={currentPage === 1}><ChevronLeft className="mr-2 h-4 w-4" /> Previous</Button>
+              <span className="text-sm text-muted-foreground">Page {currentPage} of {totalPages}</span>
+              <Button variant="outline" onClick={onNextPage} disabled={currentPage === totalPages}>Next <ChevronRight className="ml-2 h-4 w-4" /></Button>
+            </div>
+        )}
       </Card>
     </div>
   );
@@ -175,6 +187,9 @@ const PaymentLinksPage: NextPage = () => {
   const [allLinks, setAllLinks] = useState<PaymentLink[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const { toast } = useToast();
+
+  const [currentPageActive, setCurrentPageActive] = useState(1);
+  const [currentPageInactive, setCurrentPageInactive] = useState(1);
 
   useEffect(() => {
     if (!initialLoadComplete) return; 
@@ -194,6 +209,9 @@ const PaymentLinksPage: NextPage = () => {
       });
       setAllLinks(fetchedLinks);
       setLoadingData(false);
+      // Reset pages on data change
+      setCurrentPageActive(1);
+      setCurrentPageInactive(1);
     }, (error) => {
       console.error("Error fetching payment links:", error);
       toast({ title: "Error", description: "Could not fetch payment links.", variant: "destructive" });
@@ -213,25 +231,15 @@ const PaymentLinksPage: NextPage = () => {
     const linkDocRef = doc(db, 'paymentLinks', id);
 
     try {
-      // 1. Query for associated transactions
       const transactionsQuery = query(
         collection(db, 'transactions'),
         where('paymentLinkId', '==', id),
         where('userId', '==', user.uid) 
       );
       const transactionsSnapshot = await getDocs(transactionsQuery);
-
-      // 2. Add delete operations for each transaction to the batch
-      transactionsSnapshot.forEach((docSnap) => {
-        batch.delete(docSnap.ref);
-      });
-      
-      // 3. Add delete operation for the payment link itself
+      transactionsSnapshot.forEach((docSnap) => batch.delete(docSnap.ref));
       batch.delete(linkDocRef);
-
-      // 4. Commit the batch
       await batch.commit();
-
       toast({ 
           title: "Payment Link Deleted", 
           description: `Link "${linkName}" and its ${transactionsSnapshot.size} associated transaction(s) have been deleted.` 
@@ -268,6 +276,19 @@ const PaymentLinksPage: NextPage = () => {
     [filteredLinks]
   );
   
+  const totalPagesActive = Math.ceil(activeLinks.length / ITEMS_PER_PAGE);
+  const paginatedActiveLinks = useMemo(() => {
+    const startIndex = (currentPageActive - 1) * ITEMS_PER_PAGE;
+    return activeLinks.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [activeLinks, currentPageActive]);
+
+  const totalPagesInactive = Math.ceil(inactiveLinks.length / ITEMS_PER_PAGE);
+  const paginatedInactiveLinks = useMemo(() => {
+    const startIndex = (currentPageInactive - 1) * ITEMS_PER_PAGE;
+    return inactiveLinks.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [inactiveLinks, currentPageInactive]);
+
+
   if (authLoading || (!user && !initialLoadComplete)) { 
      return (
         <div className="flex justify-center items-center h-full p-8">
@@ -298,8 +319,28 @@ const PaymentLinksPage: NextPage = () => {
           />
         </div>
 
-        <PaymentLinksTable links={activeLinks} title="Active" onDelete={handleDelete} onCopy={handleCopyLink} isLoading={loadingData} />
-        <PaymentLinksTable links={inactiveLinks} title="Inactive" onDelete={handleDelete} onCopy={handleCopyLink} isLoading={loadingData} />
+        <PaymentLinksTable 
+            links={paginatedActiveLinks} 
+            title="Active" 
+            onDelete={handleDelete} 
+            onCopy={handleCopyLink} 
+            isLoading={loadingData}
+            currentPage={currentPageActive}
+            totalPages={totalPagesActive}
+            onNextPage={() => setCurrentPageActive(p => Math.min(p + 1, totalPagesActive))}
+            onPreviousPage={() => setCurrentPageActive(p => Math.max(p - 1, 1))}
+        />
+        <PaymentLinksTable 
+            links={paginatedInactiveLinks} 
+            title="Inactive" 
+            onDelete={handleDelete} 
+            onCopy={handleCopyLink} 
+            isLoading={loadingData}
+            currentPage={currentPageInactive}
+            totalPages={totalPagesInactive}
+            onNextPage={() => setCurrentPageInactive(p => Math.min(p + 1, totalPagesInactive))}
+            onPreviousPage={() => setCurrentPageInactive(p => Math.max(p - 1, 1))}
+        />
         
         {!loadingData && filteredLinks.length === 0 && searchTerm && (
           <div className="text-center py-10 text-muted-foreground">

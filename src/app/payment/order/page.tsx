@@ -13,10 +13,10 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Spinner } from '@/components/ui/spinner';
 import type { PaymentLink } from '@/lib/types';
-import { format, parse, isFuture, isValid } from 'date-fns';
+import { format, isFuture, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { db } from '@/lib/firebase'; // Import db
-import { doc, getDoc, Timestamp } from 'firebase/firestore'; // Import Firestore functions
+import { db } from '@/lib/firebase';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
 
 interface PaymentOption {
   value: string;
@@ -47,7 +47,7 @@ const PaymentForOrderContent: React.FC = () => {
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   const [cardNumber, setCardNumber] = useState('');
-  const [cardExpiry, setCardExpiry] = useState(''); // MM/YY format
+  const [cardExpiry, setCardExpiry] = useState(''); 
   const [cvv, setCvv] = useState('');
 
   useEffect(() => {
@@ -94,7 +94,7 @@ const PaymentForOrderContent: React.FC = () => {
   }, [searchParams]);
 
   const isCardFormValid = useCallback(() => {
-    const expiryPattern = /^(0[1-9]|1[0-2])\/\d{2}$/; // MM/YY
+    const expiryPattern = /^(0[1-9]|1[0-2])\/\d{2}$/; 
     if (!expiryPattern.test(cardExpiry)) return false;
     
     const [monthStr, yearStr] = cardExpiry.split('/');
@@ -103,8 +103,7 @@ const PaymentForOrderContent: React.FC = () => {
 
     if (isNaN(parsedMonth) || isNaN(parsedFullYear) || parsedMonth < 1 || parsedMonth > 12) return false;
 
-    // Check if expiry date is in the future (end of expiry month)
-    const expiryDateObject = new Date(parsedFullYear, parsedMonth -1); // Month is 0-indexed
+    const expiryDateObject = new Date(parsedFullYear, parsedMonth -1); 
     const lastDayOfExpiryMonth = new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() + 1, 0);
 
     return (
@@ -136,6 +135,7 @@ const PaymentForOrderContent: React.FC = () => {
 
     const queryParams = new URLSearchParams({
       paymentLinkId: currentPaymentLink.id,
+      creatorUserId: currentPaymentLink.creatorUserId, // Pass creatorUserId
       method: selectedPaymentMethod,
       amount: String(currentPaymentLink.amount),
       currency: currentPaymentLink.currency || 'KES',
@@ -143,16 +143,14 @@ const PaymentForOrderContent: React.FC = () => {
     });
 
     if (selectedPaymentMethod === 'mpesa_stk') {
-      queryParams.append('mpesaPhoneNumber', mpesaPhoneNumber); // Full number for API
+      queryParams.append('mpesaPhoneNumber', mpesaPhoneNumber); 
       const redactedPhone = `${mpesaPhoneNumber.substring(0, mpesaPhoneNumber.length > 7 ? 3 : 2)}****${mpesaPhoneNumber.substring(mpesaPhoneNumber.length - 2)}`;
-      queryParams.append('mpesaPhoneNumberDisplay', redactedPhone); // Redacted for display on processing page
+      queryParams.append('mpesaPhoneNumberDisplay', redactedPhone); 
     } else if (selectedPaymentMethod === 'card') {
-      queryParams.append('cardNumber', cardNumber.replace(/\s/g, '')); // Full number for API
+      queryParams.append('cardNumber', cardNumber.replace(/\s/g, '')); 
       const displayCardNum = `**** **** **** ${cardNumber.replace(/\s/g, '').slice(-4)}`;
       queryParams.append('displayCardNumber', displayCardNum);
-      // Expiry and CVV are passed via query params to the mock processing page for this demo
-      // In a real app, this would be handled differently (e.g. tokenization, server-side handling)
-      queryParams.append('cardExpiry', cardExpiry); // MM/YY
+      queryParams.append('cardExpiry', cardExpiry); 
       queryParams.append('cvv', cvv);
     }
 
@@ -200,7 +198,7 @@ const PaymentForOrderContent: React.FC = () => {
   }
 
   const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
-  let payButtonText = `Pay ${currentPaymentLink.currency} ${currentPaymentLink.amount.toFixed(2)}`;
+  let payButtonText = `Pay ${currentPaymentLink.currency} ${currentPaymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   let PayButtonIcon = CreditCard;
 
   if (selectedPaymentMethod === 'mpesa_stk') {
@@ -237,7 +235,7 @@ const PaymentForOrderContent: React.FC = () => {
         <hr className="border-border my-2 !mt-3 !mb-3" />
         <div className="flex justify-between items-baseline">
           <span className="text-muted-foreground">Total</span>
-          <span className="font-bold text-foreground text-xl">{currentPaymentLink.currency} {currentPaymentLink.amount.toFixed(2)}</span>
+          <span className="font-bold text-foreground text-xl">{currentPaymentLink.currency} {currentPaymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
         {currentPaymentLink.hasExpiry && currentPaymentLink.expiryDate && currentPaymentLink.expiryDate instanceof Timestamp && (
           <div className="flex justify-between text-xs">
@@ -286,7 +284,7 @@ const PaymentForOrderContent: React.FC = () => {
                 <li>Select Lipa na M-Pesa, then Pay Bill</li>
                 <li>Enter Business Number: <strong className="text-foreground">{MOCK_PAYBILL_NUMBER}</strong></li>
                 <li>Enter Account Number: <strong className="text-foreground">{currentPaymentLink.reference}</strong></li>
-                <li>Enter Amount: <strong className="text-foreground">{currentPaymentLink.currency} {currentPaymentLink.amount.toFixed(2)}</strong></li>
+                <li>Enter Amount: <strong className="text-foreground">{currentPaymentLink.currency} {currentPaymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></li>
                 <li>Enter your M-Pesa PIN and confirm</li>
             </ul>
         </div>
@@ -363,6 +361,3 @@ const PaymentForOrderPage: NextPage = () => {
 };
 
 export default PaymentForOrderPage;
-
-
-    

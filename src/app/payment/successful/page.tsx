@@ -102,7 +102,7 @@ const PaymentSuccessfulContent: React.FC = () => {
         <div className="flex justify-between">
           <span className="text-muted-foreground">Total</span>
           <span className="font-bold text-foreground text-lg">
-            {paymentLink.currency} {paymentLink.amount.toFixed(2)}
+            {paymentLink.currency} {paymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
         </div>
         <div className="flex justify-between text-sm">
@@ -112,7 +112,7 @@ const PaymentSuccessfulContent: React.FC = () => {
       </div>
 
       <Button 
-        onClick={() => router.push('/')} // Redirect to homepage or dashboard
+        onClick={() => router.push('/')} 
         className="w-full h-12 rounded-lg text-base bg-green-500 hover:bg-green-600 text-white"
       >
         Done

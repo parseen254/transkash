@@ -4,7 +4,7 @@
 import type { NextPage } from 'next';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react'; // Added useRef
 import { ArrowLeft, Edit, Trash2, Copy, DollarSign, CalendarDays, FileText, MoreHorizontal, ChevronLeft, ChevronRight, RotateCcw, Play, Pause, Loader2, Share2, Share } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, Timestamp, serverTimestamp, writeBatch, getDocs } from 'firebase/firestore'; // Added getDocs
+import { doc, getDoc, updateDoc, deleteDoc, collection, query, where, orderBy, onSnapshot, Timestamp, serverTimestamp, writeBatch, getDocs } from 'firebase/firestore';
 import { QRCodeSVG } from 'qrcode.react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -149,7 +149,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
 
     if (paymentLink.status === 'Active') {
       updateData.status = 'Disabled';
-    } else { // If 'Disabled', 'Expired', or 'Paid', make it 'Active'
+    } else { 
       const newExpiryDate = addDays(new Date(), 10);
       updateData.status = 'Active';
       updateData.expiryDate = Timestamp.fromDate(newExpiryDate);
@@ -172,26 +172,17 @@ const PaymentLinkDetailsPage: NextPage = () => {
     const linkDocRef = doc(db, 'paymentLinks', paymentLink.id);
 
     try {
-      // 1. Query for associated transactions
       const transactionsQuery = query(
         collection(db, 'transactions'),
         where('paymentLinkId', '==', paymentLink.id),
-        where('userId', '==', user.uid) // Ensure we only delete transactions for this user
+        where('userId', '==', user.uid) 
       );
       const transactionsSnapshot = await getDocs(transactionsQuery);
-
-      // 2. Add delete operations for each transaction to the batch
       transactionsSnapshot.forEach((docSnap) => {
         batch.delete(docSnap.ref);
       });
-      console.log(`Found ${transactionsSnapshot.size} transactions to delete for payment link ${paymentLink.id}`);
-
-      // 3. Add delete operation for the payment link itself
       batch.delete(linkDocRef);
-
-      // 4. Commit the batch
       await batch.commit();
-
       toast({ title: "Link Deleted", description: `Payment link "${paymentLink.linkName}" and its ${transactionsSnapshot.size} associated transaction(s) deleted.`});
       router.push('/dashboard/payment-links');
     } catch (error: any) {
@@ -271,9 +262,11 @@ const PaymentLinkDetailsPage: NextPage = () => {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                 <div><CardTitle className="text-2xl mb-1">{paymentLink.linkName}</CardTitle><CardDescription>Details for payment link: {paymentLink.reference}</CardDescription></div>
                 <div className="mt-4 sm:mt-0 flex space-x-2">
-                  <Button variant="default" size="sm" onClick={() => setIsQrCodeDialogOpen(true)}>
-                      <Share2 className="mr-2 h-4 w-4" /> Share
-                  </Button>
+                  <DialogTrigger asChild>
+                     <Button variant="default" size="sm">
+                        <Share2 className="mr-2 h-4 w-4" /> Share
+                    </Button>
+                  </DialogTrigger>
                   <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="outline" size="sm">Actions <MoreHorizontal className="ml-2 h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -292,7 +285,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
               </div>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-6">
-              <InfoItem icon={DollarSign} label="Amount" value={`${paymentLink.currency} ${paymentLink.amount.toFixed(2)}`} />
+              <InfoItem icon={DollarSign} label="Amount" value={`${paymentLink.currency} ${paymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
               <InfoItem icon={FileText} label="Reference" value={paymentLink.reference} />
               <InfoItem icon={FileText} label="Purpose" value={paymentLink.purpose} />
               <div className="flex items-start space-x-3"> <RotateCcw className="h-5 w-5 text-muted-foreground mt-0.5" />
@@ -329,7 +322,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
                       <TableRow key={txn.id} className="h-[60px]">
                         <TableCell className="px-4 py-2 text-sm text-muted-foreground">{formatDate(txn.createdAt)}</TableCell> 
                         <TableCell className="px-4 py-2 text-sm font-normal text-foreground">{txn.customer}</TableCell>
-                        <TableCell className="px-4 py-2 text-sm text-muted-foreground">{txn.currency} {txn.amount.toFixed(2)}</TableCell>
+                        <TableCell className="px-4 py-2 text-sm text-muted-foreground">{txn.currency} {txn.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                         <TableCell className="px-4 py-2">
                           <Badge variant="secondary" className={cn( "rounded-full h-7 px-3 text-xs font-medium justify-center", txn.status === 'Completed' && 'bg-green-100 text-green-700 border-green-300', txn.status === 'Pending' && 'bg-yellow-100 text-yellow-700 border-yellow-300', txn.status === 'Failed' && 'bg-red-100 text-red-700 border-red-300' )}>
                             {txn.status}
@@ -362,7 +355,6 @@ const PaymentLinkDetailsPage: NextPage = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* QR Code Dialog */}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Share: {paymentLink?.linkName}</DialogTitle>
@@ -432,4 +424,3 @@ const PaymentLinkDetailsPage: NextPage = () => {
 };
 
 export default PaymentLinkDetailsPage;
-

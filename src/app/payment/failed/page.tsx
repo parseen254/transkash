@@ -21,17 +21,16 @@ const PaymentFailedContent: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paymentLinkIdForRetry, setPaymentLinkIdForRetry] = useState<string | null>(null);
-  // Updated default failure reason to be more generic
   const [failureReason, setFailureReason] = useState<string | null>("Your payment could not be processed.");
 
   useEffect(() => {
     const id = searchParams.get('paymentLinkId');
-    const reasonFromQuery = searchParams.get('reason'); // Optional reason from query
+    const reasonFromQuery = searchParams.get('reason'); 
     
     setPaymentLinkIdForRetry(id); 
     if (reasonFromQuery) {
       setFailureReason(reasonFromQuery);
-    } // If no reasonFromQuery, the generic default will be used.
+    } 
 
     if (id) {
       setLoading(true);
@@ -45,12 +44,12 @@ const PaymentFailedContent: React.FC = () => {
             setPaymentLink({ id: docSnap.id, ...docSnap.data() } as PaymentLink);
           } else {
             setError("Payment link details not found for this transaction attempt.");
-            setPaymentLink(null); // Ensure paymentLink is null if not found
+            setPaymentLink(null); 
           }
         } catch (err) {
           console.error("Error fetching payment link for failure page:", err);
           setError("An error occurred while fetching payment details.");
-          setPaymentLink(null); // Ensure paymentLink is null on error
+          setPaymentLink(null); 
         } finally {
           setLoading(false);
         }
@@ -59,7 +58,7 @@ const PaymentFailedContent: React.FC = () => {
     } else {
       setError("Payment link ID not provided.");
       setLoading(false);
-      setPaymentLink(null); // Ensure paymentLink is null if no ID
+      setPaymentLink(null); 
     }
   }, [searchParams]);
 
@@ -67,7 +66,6 @@ const PaymentFailedContent: React.FC = () => {
     if (paymentLinkIdForRetry) {
       router.push(`/payment/order?paymentLinkId=${paymentLinkIdForRetry}`);
     } else {
-      // If no paymentLinkIdForRetry, perhaps redirect to a general help page or homepage
       router.push('/'); 
     }
   };
@@ -116,7 +114,7 @@ const PaymentFailedContent: React.FC = () => {
           <div className="flex justify-between">
             <span className="text-muted-foreground">Amount</span>
             <span className="font-bold text-foreground text-lg">
-              {paymentLink.currency} {paymentLink.amount.toFixed(2)}
+              {paymentLink.currency} {paymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
            {failureReason && (
@@ -136,7 +134,7 @@ const PaymentFailedContent: React.FC = () => {
         onClick={handleRetry} 
         className="w-full h-12 rounded-lg text-base"
         variant={paymentLink ? "default" : "secondary"} 
-        disabled={!paymentLinkIdForRetry && !paymentLink} // Disable if no link details to retry with
+        disabled={!paymentLinkIdForRetry && !paymentLink} 
       >
         Try Again
       </Button>
