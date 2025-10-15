@@ -1,0 +1,180 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Represents a user's profile information.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user's unique ID."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The user's email address."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "The user's display name."
+        },
+        "photoURL": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of the user's profile picture."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of when the user account was created."
+        },
+        "lastLoginAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the user's last login."
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "PaymentLink": {
+      "title": "Payment Link",
+      "description": "Represents a shareable link for collecting payments.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user who created the link."
+        },
+        "linkName": {
+          "type": "string"
+        },
+        "reference": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "creationDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiryDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Active", "Expired", "Disabled", "Paid"]
+        },
+        "payoutAccountId": {
+          "type": "string"
+        }
+      },
+      "required": ["userId", "linkName", "amount", "currency", "payoutAccountId"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Represents a payment transaction.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user who owns the payment link."
+        },
+        "paymentLinkId": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "customer": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Completed", "Pending", "Failed"]
+        },
+        "reference": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        }
+      },
+      "required": ["userId", "paymentLinkId", "amount", "currency", "status"]
+    },
+    "PayoutAccount": {
+      "title": "Payout Account",
+      "description": "Represents a user's account for receiving payouts.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["bank", "mpesa"]
+        },
+        "accountName": {
+          "type": "string"
+        },
+        "accountNumber": {
+          "type": "string"
+        },
+        "accountHolderName": {
+          "type": "string"
+        },
+        "bankName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Active", "Pending", "Disabled"]
+        }
+      },
+      "required": ["userId", "type", "accountName", "accountNumber", "accountHolderName"]
+    },
+    "Beneficiary": {
+      "title": "Beneficiary",
+      "description": "Represents a beneficiary for payments.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "firstName", "lastName", "createdAt"]
+    }
+  },
+  "auth": {
+    "providers": ["password", "google.com"]
+  },
+  "firestore": {
+    "version": "1",
+    "indexes": [
+      {
+        "collectionGroup": "beneficiaries",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "userId", "order": "ASCENDING" },
+          { "fieldPath": "createdAt", "order": "DESCENDING" }
+        ]
+      }
+    ],
+    "rules": "rules/firestore.rules"
+  }
+}
