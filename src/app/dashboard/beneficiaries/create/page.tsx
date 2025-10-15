@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import type { NextPage } from 'next';
@@ -24,6 +25,8 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { Beneficiary } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
+import { countries } from '@/lib/countries';
+import { currencies } from '@/lib/currencies';
 
 const beneficiarySchema = z.object({
   serviceCode: z.enum(["MOBILETOPUP", "MONEYTRANSFER", "BILLPAYMENT"]),
@@ -170,8 +173,8 @@ const CreateBeneficiaryPage: NextPage = () => {
                   <FormField control={form.control} name="serviceCode" render={({ field }) => ( <FormItem> <FormLabel>Service Type</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select service" /></SelectTrigger></FormControl><SelectContent><SelectItem value="MONEYTRANSFER">Money Transfer</SelectItem><SelectItem value="MOBILETOPUP">Mobile Top-up</SelectItem><SelectItem value="BILLPAYMENT">Bill Payment</SelectItem></SelectContent></Select><FormMessage /></FormItem> )}/>
                   <FormField control={form.control} name="collectionMode" render={({ field }) => ( <FormItem> <FormLabel>Collection Mode</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select mode" /></SelectTrigger></FormControl><SelectContent><SelectItem value="BANKACCOUNT">Bank Account</SelectItem><SelectItem value="MOBILEMONEY">Mobile Money</SelectItem><SelectItem value="CASH">Cash Pickup</SelectItem></SelectContent></Select><FormMessage /></FormItem> )}/>
                   <FormField control={form.control} name="legalEntityType" render={({ field }) => ( <FormItem> <FormLabel>Legal Entity</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select entity type" /></SelectTrigger></FormControl><SelectContent><SelectItem value="I">Individual</SelectItem><SelectItem value="B">Business</SelectItem></SelectContent></Select><FormMessage /></FormItem> )}/>
-                  <FormField control={form.control} name="countryIso3" render={({ field }) => ( <FormItem> <FormLabel>Country (ISO3)</FormLabel> <FormControl><Input placeholder="e.g., KEN" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                  <FormField control={form.control} name="currencyIso" render={({ field }) => ( <FormItem> <FormLabel>Currency (ISO)</FormLabel> <FormControl><Input placeholder="e.g., KES" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                  <FormField control={form.control} name="countryIso3" render={({ field }) => ( <FormItem> <FormLabel>Country</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a country" /></SelectTrigger></FormControl><SelectContent>{countries.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem> )}/>
+                  <FormField control={form.control} name="currencyIso" render={({ field }) => ( <FormItem> <FormLabel>Currency</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a currency" /></SelectTrigger></FormControl><SelectContent>{currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.name} ({c.code})</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem> )}/>
                   <FormField control={form.control} name="providerId" render={({ field }) => ( <FormItem> <FormLabel>Provider ID</FormLabel> <FormControl><Input placeholder="Financial provider ID" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                 </div>
               )}
@@ -182,8 +185,8 @@ const CreateBeneficiaryPage: NextPage = () => {
                     {form.getValues("legalEntityType") === 'B' && <FormField control={form.control} name="companyName" render={({ field }) => ( <FormItem> <FormLabel>Company Name</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>}
                     <FormField control={form.control} name="dob" render={({ field }) => ( <FormItem> <FormLabel>Date of Birth</FormLabel> <FormControl><Input type="date" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                     <FormField control={form.control} name="gender" render={({ field }) => ( <FormItem> <FormLabel>Gender</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger></FormControl><SelectContent><SelectItem value="M">Male</SelectItem><SelectItem value="F">Female</SelectItem></SelectContent></Select><FormMessage /></FormItem> )}/>
-                    <FormField control={form.control} name="nationalityCountry" render={({ field }) => ( <FormItem> <FormLabel>Nationality Country</FormLabel> <FormControl><Input placeholder="e.g., KEN" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="birthCountry" render={({ field }) => ( <FormItem> <FormLabel>Country of Birth</FormLabel> <FormControl><Input placeholder="e.g., KEN" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="nationalityCountry" render={({ field }) => ( <FormItem> <FormLabel>Nationality</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a country" /></SelectTrigger></FormControl><SelectContent>{countries.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem> )}/>
+                    <FormField control={form.control} name="birthCountry" render={({ field }) => ( <FormItem> <FormLabel>Country of Birth</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a country" /></SelectTrigger></FormControl><SelectContent>{countries.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem> )}/>
                 </div>
               )}
               {currentStep === 2 && (
@@ -214,7 +217,7 @@ const CreateBeneficiaryPage: NextPage = () => {
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <FormField control={form.control} name="identificationType" render={({ field }) => ( <FormItem> <FormLabel>ID Type</FormLabel> <FormControl><Input placeholder="e.g., Passport" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                     <FormField control={form.control} name="identificationNumber" render={({ field }) => ( <FormItem> <FormLabel>ID Number</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="idIssuingCountry" render={({ field }) => ( <FormItem> <FormLabel>ID Issuing Country</FormLabel> <FormControl><Input placeholder="e.g., KEN" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="idIssuingCountry" render={({ field }) => ( <FormItem> <FormLabel>ID Issuing Country</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a country" /></SelectTrigger></FormControl><SelectContent>{countries.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem> )}/>
                     <FormField control={form.control} name="idIssueDate" render={({ field }) => ( <FormItem> <FormLabel>ID Issue Date</FormLabel> <FormControl><Input type="date" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                     <FormField control={form.control} name="idExpiryDate" render={({ field }) => ( <FormItem> <FormLabel>ID Expiry Date</FormLabel> <FormControl><Input type="date" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                 </div>
@@ -239,5 +242,7 @@ const CreateBeneficiaryPage: NextPage = () => {
 };
 
 export default CreateBeneficiaryPage;
+
+    
 
     
