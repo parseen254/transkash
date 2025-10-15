@@ -41,6 +41,7 @@ export interface PayoutAccount {
 export interface PaymentLink {
   id: string; 
   userId: string;
+  creatorUserId?: string;
   linkName: string;
   reference: string;
   amount: number; // Store as number
@@ -57,7 +58,7 @@ export interface PaymentLink {
 
 export interface Transaction {
   id: string; 
-  userId: string;
+  userId: string; // The ID of the user who created the payment link
   paymentLinkId: string;
   date: Timestamp; 
   customer: string; 
@@ -67,6 +68,60 @@ export interface Transaction {
   reference: string; 
   method?: 'mpesa_stk' | 'mpesa_paybill' | 'card';
   createdAt: Timestamp;
+}
+
+export interface Beneficiary {
+  id: string;
+  userId: string;
+  serviceCode: "MOBILETOPUP" | "MONEYTRANSFER" | "BILLPAYMENT";
+  collectionMode: "MOBILEMONEY" | "BANKACCOUNT" | "CASH";
+  legalEntityType: "I" | "B";
+  countryIso3: string;
+  currencyIso: string;
+  providerId: string;
+  branchId?: string | null;
+  beneficiaryNickname?: string | null;
+  beneficiaryEmailAddress?: string | null;
+  companyName?: string | null;
+  firstName: string;
+  lastName: string;
+  dob: string;
+  gender: "M" | "F";
+  mobileNo: string;
+  postcode: string;
+  city: string;
+  address: string;
+  addressLine2?: string | null;
+  district?: string | null;
+  stateOrProvince?: string | null;
+  nationalityCountry: string;
+  birthCountry: string;
+  reasonId?: string | null;
+  relationId?: string | null;
+  sourceOfFundId?: string | null;
+  narration?: string | null;
+  bankAccountEmail?: string | null;
+  branchCode?: string | null;
+  ifsc?: string | null;
+  aba?: string | null;
+  bankAddress?: string | null;
+  institutionNo?: string | null;
+  bankName?: string | null;
+  clabe?: string | null;
+  bicSwift?: string | null;
+  acctNumber?: string | null;
+  sortCode?: string | null;
+  iban?: string | null;
+  bsbCode?: string | null;
+  cnaps?: string | null;
+  identificationNumber?: string | null;
+  idIssuingCountry?: string | null;
+  idIssueDate?: string | null;
+  identificationType?: string | null;
+  idExpiryDate?: string | null;
+  billReferenceNumber?: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 

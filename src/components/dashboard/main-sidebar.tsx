@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, LinkIcon as LinkIconLucide, Settings, Landmark, LogOut } from 'lucide-react'; 
+import { Home, LinkIcon as LinkIconLucide, Settings, Landmark, LogOut, Users } from 'lucide-react'; 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -24,6 +24,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/dashboard/payment-links', label: 'Payment Links', icon: LinkIconLucide },
+  { href: '/dashboard/beneficiaries', label: 'Beneficiaries', icon: Users },
   { href: '/dashboard/payouts', label: 'Payout Accounts', icon: Landmark },
   { href: '/dashboard/settings', label: 'Profile Settings', icon: Settings },
 ];
