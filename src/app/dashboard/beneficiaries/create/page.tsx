@@ -42,7 +42,7 @@ const beneficiarySchema = z.object({
   gender: z.enum(["M", "F"]),
   mobileNo: z.string().min(1, "Mobile number is required"),
   postcode: z.string().min(1, "Postal code is required"),
-  city: zstring().min(1, "City is required"),
+  city: z.string().min(1, "City is required"),
   address: z.string().min(1, "Address is required"),
   addressLine2: z.string().optional().nullable(),
   district: z.string().optional().nullable(),
@@ -61,7 +61,7 @@ const beneficiarySchema = z.object({
   institutionNo: z.string().optional().nullable(),
   bankName: z.string().optional().nullable(),
   clabe: z.string().optional().nullable(),
-axclbicSwift: z.string().optional().nullable(),
+  bicSwift: z.string().optional().nullable(),
   acctNumber: z.string().optional().nullable(),
   sortCode: z.string().optional().nullable(),
   iban: z.string().optional().nullable(),
@@ -239,3 +239,5 @@ const CreateBeneficiaryPage: NextPage = () => {
 };
 
 export default CreateBeneficiaryPage;
+
+    
