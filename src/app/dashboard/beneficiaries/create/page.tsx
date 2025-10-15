@@ -62,7 +62,7 @@ const beneficiarySchema = z.object({
   aba: z.string().optional().nullable(),
   bankAddress: z.string().optional().nullable(),
   institutionNo: z.string().optional().nullable(),
-  bankName: zstring().optional().nullable(),
+  bankName: z.string().optional().nullable(),
   clabe: z.string().optional().nullable(),
   bicSwift: z.string().optional().nullable(),
   acctNumber: z.string().optional().nullable(),
@@ -273,3 +273,5 @@ const CreateBeneficiaryPage: NextPage = () => {
 };
 
 export default CreateBeneficiaryPage;
+
+    
