@@ -41,7 +41,9 @@ const beneficiarySchema = z.object({
   companyName: z.string().optional().nullable(),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
-  dob: z.string().min(1, "Date of birth is required"),
+  dob: z.date({
+    required_error: "A date of birth is required.",
+  }),
   gender: z.enum(["M", "F"]),
   mobileNo: z.string().min(1, "Mobile number is required"),
   postcode: z.string().min(1, "Postal code is required"),
@@ -133,9 +135,10 @@ const CreateBeneficiaryPage: NextPage = () => {
     }
 
     try {
-      const newBeneficiaryData: Omit<Beneficiary, 'id'> = {
+      const newBeneficiaryData: Omit<Beneficiary, 'id' | 'dob'> & { dob: string } = {
         userId: user.uid,
         ...data,
+        dob: format(data.dob, 'yyyy-MM-dd'),
         createdAt: serverTimestamp() as Timestamp,
         updatedAt: serverTimestamp() as Timestamp,
       };
@@ -214,7 +217,34 @@ const CreateBeneficiaryPage: NextPage = () => {
                     <FormField control={form.control} name="firstName" render={({ field }) => ( <FormItem> <FormLabel>First Name</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                     <FormField control={form.control} name="lastName" render={({ field }) => ( <FormItem> <FormLabel>Last Name</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                     {form.getValues("legalEntityType") === 'B' && <FormField control={form.control} name="companyName" render={({ field }) => ( <FormItem> <FormLabel>Company Name</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>}
-                    <FormField control={form.control} name="dob" render={({ field }) => ( <FormItem> <FormLabel>Date of Birth</FormLabel> <FormControl><Input type="date" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="dob" render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Date of Birth</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
+                                {field.value ? (format(field.value, "PPP")) : (<span>Pick a date</span>)}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={field.value}
+                              onSelect={field.onChange}
+                              disabled={(date) =>
+                                date > new Date() || date < new Date("1900-01-01")
+                              }
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                     <FormField control={form.control} name="gender" render={({ field }) => ( <FormItem> <FormLabel>Gender</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger></FormControl><SelectContent><SelectItem value="M">Male</SelectItem><SelectItem value="F">Female</SelectItem></SelectContent></Select><FormMessage /></FormItem> )}/>
                     <FormField control={form.control} name="nationalityCountry" render={({ field }) => ( <FormItem> <FormLabel>Nationality</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a country" /></SelectTrigger></FormControl><SelectContent>{countries.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem> )}/>
                     <FormField control={form.control} name="birthCountry" render={({ field }) => ( <FormItem> <FormLabel>Country of Birth</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a country" /></SelectTrigger></FormControl><SelectContent>{countries.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem> )}/>
@@ -273,5 +303,3 @@ const CreateBeneficiaryPage: NextPage = () => {
 };
 
 export default CreateBeneficiaryPage;
-
-    
