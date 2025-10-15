@@ -62,7 +62,7 @@ const beneficiarySchema = z.object({
   aba: z.string().optional().nullable(),
   bankAddress: z.string().optional().nullable(),
   institutionNo: z.string().optional().nullable(),
-  bankName: z.string().optional().nullable(),
+  bankName: zstring().optional().nullable(),
   clabe: z.string().optional().nullable(),
   bicSwift: z.string().optional().nullable(),
   acctNumber: z.string().optional().nullable(),
@@ -92,6 +92,37 @@ const CreateBeneficiaryPage: NextPage = () => {
       serviceCode: 'MONEYTRANSFER',
       collectionMode: 'BANKACCOUNT',
       legalEntityType: 'I',
+      branchId: '',
+      beneficiaryNickname: '',
+      beneficiaryEmailAddress: '',
+      companyName: '',
+      addressLine2: '',
+      district: '',
+      stateOrProvince: '',
+      reasonId: '',
+      relationId: '',
+      sourceOfFundId: '',
+      narration: '',
+      bankAccountEmail: '',
+      branchCode: '',
+      ifsc: '',
+      aba: '',
+      bankAddress: '',
+      institutionNo: '',
+      bankName: '',
+      clabe: '',
+      bicSwift: '',
+      acctNumber: '',
+      sortCode: '',
+      iban: '',
+      bsbCode: '',
+      cnaps: '',
+      identificationNumber: '',
+      idIssuingCountry: '',
+      idIssueDate: '',
+      identificationType: '',
+      idExpiryDate: '',
+      billReferenceNumber: '',
     },
   });
 
@@ -191,35 +222,35 @@ const CreateBeneficiaryPage: NextPage = () => {
               )}
               {currentStep === 2 && (
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField control={form.control} name="beneficiaryEmailAddress" render={({ field }) => ( <FormItem> <FormLabel>Email Address</FormLabel> <FormControl><Input type="email" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="beneficiaryEmailAddress" render={({ field }) => ( <FormItem> <FormLabel>Email Address</FormLabel> <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
                     <FormField control={form.control} name="mobileNo" render={({ field }) => ( <FormItem> <FormLabel>Mobile Number</FormLabel> <FormControl><Input type="tel" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                     <FormField control={form.control} name="address" render={({ field }) => ( <FormItem className="md:col-span-2"> <FormLabel>Address Line 1</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="addressLine2" render={({ field }) => ( <FormItem className="md:col-span-2"> <FormLabel>Address Line 2</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="addressLine2" render={({ field }) => ( <FormItem className="md:col-span-2"> <FormLabel>Address Line 2</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
                     <FormField control={form.control} name="city" render={({ field }) => ( <FormItem> <FormLabel>City</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
                     <FormField control={form.control} name="postcode" render={({ field }) => ( <FormItem> <FormLabel>Postal Code</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="stateOrProvince" render={({ field }) => ( <FormItem> <FormLabel>State / Province</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="district" render={({ field }) => ( <FormItem> <FormLabel>District</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="stateOrProvince" render={({ field }) => ( <FormItem> <FormLabel>State / Province</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="district" render={({ field }) => ( <FormItem> <FormLabel>District</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
                 </div>
               )}
                {currentStep === 3 && (
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField control={form.control} name="beneficiaryNickname" render={({ field }) => ( <FormItem> <FormLabel>Nickname</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="bankName" render={({ field }) => ( <FormItem> <FormLabel>Bank Name</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="acctNumber" render={({ field }) => ( <FormItem> <FormLabel>Account Number</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="iban" render={({ field }) => ( <FormItem> <FormLabel>IBAN</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="bicSwift" render={({ field }) => ( <FormItem> <FormLabel>SWIFT / BIC</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="sortCode" render={({ field }) => ( <FormItem> <FormLabel>Sort Code (UK)</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="ifsc" render={({ field }) => ( <FormItem> <FormLabel>IFSC (India)</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="aba" render={({ field }) => ( <FormItem> <FormLabel>ABA Routing (US)</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="beneficiaryNickname" render={({ field }) => ( <FormItem> <FormLabel>Nickname</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="bankName" render={({ field }) => ( <FormItem> <FormLabel>Bank Name</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="acctNumber" render={({ field }) => ( <FormItem> <FormLabel>Account Number</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="iban" render={({ field }) => ( <FormItem> <FormLabel>IBAN</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="bicSwift" render={({ field }) => ( <FormItem> <FormLabel>SWIFT / BIC</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="sortCode" render={({ field }) => ( <FormItem> <FormLabel>Sort Code (UK)</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="ifsc" render={({ field }) => ( <FormItem> <FormLabel>IFSC (India)</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="aba" render={({ field }) => ( <FormItem> <FormLabel>ABA Routing (US)</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
                 </div>
               )}
               {currentStep === 4 && (
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField control={form.control} name="identificationType" render={({ field }) => ( <FormItem> <FormLabel>ID Type</FormLabel> <FormControl><Input placeholder="e.g., Passport" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="identificationNumber" render={({ field }) => ( <FormItem> <FormLabel>ID Number</FormLabel> <FormControl><Input {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="idIssuingCountry" render={({ field }) => ( <FormItem> <FormLabel>ID Issuing Country</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a country" /></SelectTrigger></FormControl><SelectContent>{countries.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem> )}/>
-                    <FormField control={form.control} name="idIssueDate" render={({ field }) => ( <FormItem> <FormLabel>ID Issue Date</FormLabel> <FormControl><Input type="date" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
-                    <FormField control={form.control} name="idExpiryDate" render={({ field }) => ( <FormItem> <FormLabel>ID Expiry Date</FormLabel> <FormControl><Input type="date" {...field} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="identificationType" render={({ field }) => ( <FormItem> <FormLabel>ID Type</FormLabel> <FormControl><Input placeholder="e.g., Passport" {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="identificationNumber" render={({ field }) => ( <FormItem> <FormLabel>ID Number</FormLabel> <FormControl><Input {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="idIssuingCountry" render={({ field }) => ( <FormItem> <FormLabel>ID Issuing Country</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value ?? ''}><FormControl><SelectTrigger><SelectValue placeholder="Select a country" /></SelectTrigger></FormControl><SelectContent>{countries.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem> )}/>
+                    <FormField control={form.control} name="idIssueDate" render={({ field }) => ( <FormItem> <FormLabel>ID Issue Date</FormLabel> <FormControl><Input type="date" {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
+                    <FormField control={form.control} name="idExpiryDate" render={({ field }) => ( <FormItem> <FormLabel>ID Expiry Date</FormLabel> <FormControl><Input type="date" {...field} value={field.value ?? ''} /></FormControl> <FormMessage /> </FormItem> )}/>
                 </div>
               )}
 
@@ -242,7 +273,3 @@ const CreateBeneficiaryPage: NextPage = () => {
 };
 
 export default CreateBeneficiaryPage;
-
-    
-
-    
