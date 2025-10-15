@@ -53,6 +53,9 @@ export interface PaymentLink {
   shortUrl: string; 
   hasExpiry: boolean;
   updatedAt?: Timestamp;
+  // Provider-agnostic linkage (optional):
+  provider?: 'furp';
+  providerReference?: string; // e.g., PartnerReferenceNumber or provider reference
 }
 
 export interface Transaction {
@@ -67,6 +70,9 @@ export interface Transaction {
   reference: string; 
   method?: 'mpesa_stk' | 'mpesa_paybill' | 'card';
   createdAt: Timestamp;
+  // Provider-agnostic linkage
+  provider?: 'furp';
+  providerReference?: string; // provider transaction reference
 }
 
 
