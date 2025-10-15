@@ -51,6 +51,28 @@ These rules help AI coding agents be productive in this codebase right away. Kee
 - Persist user prefs: read/write from `users/{uid}` and keep `themePreference` synchronized via `ThemeProvider.setTheme`.
 - Seeding: call `seedFirestoreData(user.uid, counts)` from a client component (see `seed-data-dialog.tsx`). It chunks Firestore batch writes within limits.
 
+## Mocks vs real provider (how to swap)
+- Mocks (default local flows):
+  - M-Pesa STK: `src/app/api/mpesa/initiate-payment/route.ts`
+  - M-Pesa C2B confirm: `src/app/api/mpesa/confirm-c2b/route.ts`
+  - Card authorize: `src/app/api/card/authorize-payment/route.ts`
+  - Use these for demos and local dev when no external provider is configured.
+- Real provider (Furp):
+  - Adapter: `src/lib/providers/furp.ts` (handles auth, rate validation, initiation, status mapping).
+  - Initiate collections: `POST /api/collections/initiate` (see `src/app/api/collections/initiate/route.ts`). It creates a local transaction first, then calls Furp, returning `paymentUrl` for redirect.
+  - Webhook: `POST /api/collections/webhook` updates our local transaction status from provider callbacks.
+  - Configure env: set `FURP_*` vars in `.env` and a public `NEXT_PUBLIC_BASE_URL` for webhook URLs. See `.env.example`.
+  - Swap guideline: Prefer using `/api/collections/initiate` in app flows when `FURP_API_KEY` is set; otherwise, use the mock endpoints. Keep Firestore as the system of record and store `provider`/`providerReference` only as optional linkage.
+
+## Notifications (use Sonner)
+- Use Sonner for all end-user notifications and keep copy friendly and actionable.
+- Library: `sonner` (install if missing). In `src/app/layout.tsx`, render Sonner’s `<Toaster />` near the root. Prefer `import { toast } from 'sonner'` for notifications.
+- Message patterns:
+  - Success: “Payment link created” with a short next-step (“Copy link to share”).
+  - Progress: “Seeding data… this may take ~10s” with optimistic updates.
+  - Error: Human-friendly reason and a suggested fix (“Could not authorize card. Please verify card details or try another method.”).
+- For legacy pages using shadcn toasts via `useToast`, prefer new code to use Sonner; migrate old toasts opportunistically.
+
 ## Gotchas and edge cases
 - Don’t reference `window` or `localStorage` outside client components; ThemeProvider guards for SSR.
 - Always gate redirects on `initialLoadComplete` to avoid flicker loops.
