@@ -53,7 +53,7 @@ export const currencies = [
   { name: 'Dominican Peso', code: 'DOP' },
   { name: 'East Caribbean Dollar', code: 'XCD' },
   { name: 'Egyptian Pound', code: 'EGP' },
-  { name 'Eritrean Nakfa', code: 'ERN' },
+  { name: 'Eritrean Nakfa', code: 'ERN' },
   { name: 'Ethiopian Birr', code: 'ETB' },
   { name: 'Fijian Dollar', code: 'FJD' },
   { name: 'Gambian Dalasi', code: 'GMD' },
@@ -79,7 +79,7 @@ export const currencies = [
   { name: 'Kyrgystani Som', code: 'KGS' },
   { name: 'Laotian Kip', code: 'LAK' },
   { name: 'Lebanese Pound', code: 'LBP' },
-  { name: 'Lesotho Loti', code: 'LSL' },
+  { name: 'Lesotho Loti', code: 'LSO' },
   { name: 'Liberian Dollar', code: 'LRD' },
   { name: 'Libyan Dinar', code: 'LYD' },
   { name: 'Macanese Pataca', code: 'MOP' },
@@ -156,5 +156,3 @@ export const currencies = [
   { name: 'Zambian Kwacha', code: 'ZMW' },
   { name: 'Zimbabwean Dollar', code: 'ZWL' },
 ];
-
-    
