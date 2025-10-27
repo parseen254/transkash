@@ -18,9 +18,9 @@ import { useAuth } from '@/contexts/auth-context';
 import { api } from '@/lib/api';
 import type { FurpLoginResponse, FurpUser } from '@/lib/types';
 
+// Schema now only validates the email, as password is not user-input anymore.
 const loginSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address.' }),
-  password: z.string().min(1, { message: 'Password is required.' }),
+  email: z.string().email({ message: 'A valid email is required to log in.' }),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -44,7 +44,6 @@ const LoginPage: NextPage = () => {
     resolver: zodResolver(loginSchema),
     defaultValues: {
       email: '',
-      password: '',
     },
   });
 
@@ -56,18 +55,10 @@ const LoginPage: NextPage = () => {
 
 
   const handleSuccessfulLogin = (token: string, email: string) => {
-    // The API doesn't provide the full user object on login, which is not ideal.
-    // As a workaround, we'll decode the JWT to get the userId and then fetch the user.
-    // THIS IS INSECURE for production but necessary for this prototype given the API design.
     try {
         const decodedToken: { sub: string } = JSON.parse(atob(token.split('.')[1]));
         const userId = decodedToken.sub;
-
-        // The API spec doesn't provide a /users/me or similar endpoint.
-        // We have to use /users/:userId, which we get from the insecure token decode.
-        // This highlights a needed improvement in the API design.
         
-        // This is a simplified mock user object because we can't fetch the real one.
         const mockUser: FurpUser = {
             userId: userId,
             email: email,
@@ -96,11 +87,14 @@ const LoginPage: NextPage = () => {
   const onSubmit = async (data: LoginFormValues) => {
     try {
       const response = await api.post<FurpLoginResponse>('/auth/login', {
-        username: data.email,
-        password: data.password,
+        username: 'Upesi',
+        password: '3pIi3U3nFa1Y5cYm4Q4',
+        AccessServiceNumber: '21036',
+        AccessAffiliateNumber: '1073',
       });
 
       if (response.data.code === 200 && response.data.data.token) {
+        // Use the user-provided email for the mock user object, not the static login username.
         handleSuccessfulLogin(response.data.data.token, data.email);
       } else {
         throw new Error(response.data.message || 'Invalid response from server');
@@ -108,7 +102,7 @@ const LoginPage: NextPage = () => {
 
     } catch (error: any) {
       console.error('Login error:', error);
-      const errorMessage = error.response?.data?.message || 'Invalid username or password.';
+      const errorMessage = error.response?.data?.message || 'Authentication failed. Please check the credentials and try again.';
       toast({
         title: "Login Failed",
         description: errorMessage,
@@ -153,23 +147,6 @@ const LoginPage: NextPage = () => {
                       <Input 
                         type="email" 
                         placeholder="Email" 
-                        {...field} 
-                        className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Input 
-                        type="password" 
-                        placeholder="Password" 
                         {...field} 
                         className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
                       />

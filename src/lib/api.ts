@@ -2,11 +2,10 @@
 import axios from 'axios';
 
 export const api = axios.create({
-  baseURL: 'https://furp02-staging.funtechcom.com/api/v1',
+  baseURL: 'https://furp02-staging.funtechcom.com/api/v1/mito',
   headers: {
     'Content-Type': 'application/json',
-    // The ApiKey can be set here if it's static, or added dynamically
-    // 'ApiKey': process.env.NEXT_PUBLIC_FURP_API_KEY
+    'ApiKey': 'd2783dc0-0ebc-4980-98ec-6203215f81ec'
   },
 });
 
