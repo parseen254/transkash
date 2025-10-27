@@ -1,3 +1,4 @@
+
 // src/app/api/proxy/[[...slug]]/route.ts
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -20,6 +21,9 @@ async function handler(req: NextRequest) {
   headers.set('ApiKey', FURP_API_KEY);
   // Remove headers that should not be forwarded
   headers.delete('cookie');
+  // Deleting Content-Length allows the fetch API to set it correctly based on the body.
+  // This is a common fix for 502 errors in Node.js-based proxies.
+  headers.delete('content-length');
 
   try {
     const response = await fetch(apiUrl, {
