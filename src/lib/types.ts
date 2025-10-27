@@ -11,9 +11,9 @@ export interface UserProfile {
   displayName?: string | null;
   personalPhone?: string;
   photoURL?: string | null;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
-  lastLoginAt?: Timestamp;
+  createdAt?: Timestamp | string;
+  updatedAt?: Timestamp | string;
+  lastLoginAt?: Timestamp | string;
   provider?: string;
   themePreference?: ThemePreference;
   businessName?: string;
@@ -34,8 +34,8 @@ export interface PayoutAccount {
   routingNumber?: string; 
   swiftCode?: string; 
   status: 'Active' | 'Pending' | 'Disabled';
-  createdAt: Timestamp;
-  updatedAt?: Timestamp;
+  createdAt: Timestamp | string;
+  updatedAt?: Timestamp | string;
 }
 
 export interface PaymentLink {
@@ -44,38 +44,39 @@ export interface PaymentLink {
   creatorUserId?: string;
   linkName: string;
   reference: string;
-  amount: number; // Store as number
+  amount: number;
   currency: string; 
   purpose: string;
-  creationDate: Timestamp;
-  expiryDate?: Timestamp | null; 
+  creationDate: Timestamp | string;
+  expiryDate?: Timestamp | null | string; 
   status: 'Active' | 'Expired' | 'Disabled' | 'Paid';
   payoutAccountId: string; 
   shortUrl: string; 
   hasExpiry: boolean;
-  updatedAt?: Timestamp;
+  updatedAt?: Timestamp | string;
 }
 
 export interface Transaction {
   id: string; 
-  userId: string; // The ID of the user who created the payment link
+  userId: string; 
   paymentLinkId: string;
-  date: Timestamp; 
+  date: Timestamp | string; 
   customer: string; 
   amount: number; 
   currency: string;
   status: 'Completed' | 'Pending' | 'Failed';
   reference: string; 
   method?: 'mpesa_stk' | 'mpesa_paybill' | 'card';
-  createdAt: Timestamp;
+  createdAt: Timestamp | string;
 }
 
 export interface Beneficiary {
   id: string;
+  beneficiaryId?: string; // from API
   userId: string;
   serviceCode: "MOBILETOPUP" | "MONEYTRANSFER" | "BILLPAYMENT";
   collectionMode: "MOBILEMONEY" | "BANKACCOUNT" | "CASH";
-  legalEntityType: "I" | "B";
+  legalEntityType: "I" | "B" | "Individual" | "Business"; // Allow both short and long form
   countryIso3: string;
   currencyIso: string;
   providerId: string;
@@ -85,17 +86,17 @@ export interface Beneficiary {
   companyName?: string | null;
   firstName: string;
   lastName: string;
-  dob: string;
-  gender: "M" | "F";
-  mobileNo: string;
-  postcode: string;
-  city: string;
-  address: string;
+  dob?: string | Date | null;
+  gender?: "M" | "F" | null;
+  mobileNo?: string | null;
+  postcode?: string | null;
+  city?: string | null;
+  address?: string | null;
   addressLine2?: string | null;
   district?: string | null;
   stateOrProvince?: string | null;
-  nationalityCountry: string;
-  birthCountry: string;
+  nationalityCountry?: string | null;
+  birthCountry?: string | null;
   reasonId?: string | null;
   relationId?: string | null;
   sourceOfFundId?: string | null;
@@ -120,25 +121,44 @@ export interface Beneficiary {
   identificationType?: string | null;
   idExpiryDate?: string | null;
   billReferenceNumber?: string | null;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: Timestamp | string;
+  updatedAt?: Timestamp | string;
 }
 
-
-export interface PublicPaymentLinkDetails extends Omit<PaymentLink, 'userId' | 'payoutAccountId' | 'updatedAt' | 'creationDate' | 'expiryDate' | 'amount' | 'status'> {
-  amount: string | number; // More flexible for display
-  status: string; // More flexible for display
-  creationDate: string | Date | Timestamp;
-  expiryDate?: string | Date | Timestamp | null;
+// Types from Furp API Spec
+export interface FurpLoginResponse {
+  data: {
+    token: string;
+    issuedOn: string;
+    expiresOn: string;
+    refreshToken: string;
+  };
+  message: string;
+  code: number;
+  responseType: string;
 }
 
+export interface FurpUser {
+  userId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  countryIso3: string;
+  phoneNumber: string;
+  middleName?: string;
+  legalEntityType: 'I' | 'B';
+  created_at: string;
+}
 
-export interface PaymentOutcomeDetails {
-  linkName?: string; 
-  orderReference?: string; 
-  purpose?: string; 
-  amountPaid?: string; 
-  currency?: string; 
-  paidOn?: string; 
-  failureReason?: string; 
+export interface FurpBeneficiaryRequirement {
+  label: string;
+  name: string;
+  order: number;
+  type: string;
+  format: string | null;
+  columnDataType: string;
+  isRequired: boolean;
+  isDisplayable: boolean;
+  fieldInformation: string | null;
+  dropdownOptions: { name: string; id: string }[] | null;
 }

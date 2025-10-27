@@ -12,11 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/auth-context';
-import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
 import type { Beneficiary } from '@/lib/types';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
+import { api } from '@/lib/api';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -37,44 +36,51 @@ const BeneficiariesPage: NextPage = () => {
       return;
     }
     setLoadingData(true);
-    const beneficiariesCollection = collection(db, 'beneficiaries');
-    const q = query(beneficiariesCollection, where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
     
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const fetchedBeneficiaries: Beneficiary[] = [];
-      querySnapshot.forEach((docSnap) => {
-        fetchedBeneficiaries.push({ id: docSnap.id, ...docSnap.data() } as Beneficiary);
-      });
-      setAllBeneficiaries(fetchedBeneficiaries);
-      setLoadingData(false);
-      setCurrentPage(1);
-    }, (error) => {
-      console.error("Error fetching beneficiaries:", error);
-      toast({ title: "Error", description: "Could not fetch beneficiaries.", variant: "destructive" });
-      setLoadingData(false);
-    });
+    const fetchBeneficiaries = async () => {
+      try {
+        // The API requires many parameters, some of which we don't have a UI for yet.
+        // We will use some defaults for now. This should be improved.
+        const response = await api.get('/beneficiaries', {
+          params: {
+            SearchingText: searchTerm || user.userId, // Using userId as a fallback search text
+            UserId: user.userId,
+            serviceCode: 'MONEYTRANSFER',
+            collectionMode: 'BANKACCOUNT',
+            legalEntityType: 'I',
+            countryIso3: 'USA',
+            currencyIso: 'USD',
+            PageNo: currentPage,
+            PageSize: ITEMS_PER_PAGE,
+          }
+        });
 
-    return () => unsubscribe();
-  }, [user, initialLoadComplete, router, toast]);
+        if (response.data.data) {
+          const fetchedBeneficiaries = response.data.data.map((item: any) => ({
+            id: item.beneficiaryId, // mapping from beneficiaryId
+            ...item
+          }));
+          setAllBeneficiaries(fetchedBeneficiaries);
+        } else {
+          setAllBeneficiaries([]);
+        }
+      } catch (error) {
+        console.error("Error fetching beneficiaries:", error);
+        toast({ title: "Error", description: "Could not fetch beneficiaries.", variant: "destructive" });
+      } finally {
+        setLoadingData(false);
+      }
+    }
 
-  const filteredBeneficiaries = useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    return allBeneficiaries.filter(beneficiary =>
-      beneficiary.beneficiaryNickname?.toLowerCase().includes(term) ||
-      beneficiary.firstName.toLowerCase().includes(term) ||
-      beneficiary.lastName.toLowerCase().includes(term) ||
-      beneficiary.mobileNo.includes(term) ||
-      beneficiary.acctNumber?.includes(term)
-    );
-  }, [searchTerm, allBeneficiaries]);
+    fetchBeneficiaries();
 
-  const totalPages = Math.ceil(filteredBeneficiaries.length / ITEMS_PER_PAGE);
-  const paginatedBeneficiaries = useMemo(() => {
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filteredBeneficiaries.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-  }, [filteredBeneficiaries, currentPage]);
+  }, [user, initialLoadComplete, router, toast, currentPage, searchTerm]);
 
-  const handleNextPage = () => setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  // Since API handles pagination and search, we just display what we get.
+  const paginatedBeneficiaries = allBeneficiaries;
+  const totalPages = 1; // The API response should ideally give us total pages.
+
+  const handleNextPage = () => setCurrentPage((prev) => prev + 1);
   const handlePreviousPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
   
   if (authLoading || (!user && !initialLoadComplete)) { 
@@ -100,10 +106,13 @@ const BeneficiariesPage: NextPage = () => {
         <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
         <Input
           type="search"
-          placeholder="Search by name, nickname, phone, or account number..."
+          placeholder="Search beneficiaries..."
           className="w-full bg-secondary border-border rounded-lg h-12 pl-10 pr-4 text-base focus-visible:ring-primary"
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setCurrentPage(1); // Reset to first page on new search
+          }}
         />
       </div>
 
@@ -118,7 +127,7 @@ const BeneficiariesPage: NextPage = () => {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Nickname</TableHead>
-                  <TableHead>Contact</TableHead>
+                  <TableHead>Contact (Email)</TableHead>
                   <TableHead>Collection Mode</TableHead>
                   <TableHead>Country</TableHead>
                 </TableRow>
@@ -135,7 +144,7 @@ const BeneficiariesPage: NextPage = () => {
                     <TableRow key={beneficiary.id}>
                       <TableCell className="font-medium">{beneficiary.firstName} {beneficiary.lastName}</TableCell>
                       <TableCell>{beneficiary.beneficiaryNickname || 'N/A'}</TableCell>
-                      <TableCell>{beneficiary.mobileNo}</TableCell>
+                      <TableCell>{beneficiary.beneficiaryEmailAddress || 'N/A'}</TableCell>
                       <TableCell>{beneficiary.collectionMode}</TableCell>
                       <TableCell>{beneficiary.countryIso3}</TableCell>
                     </TableRow>

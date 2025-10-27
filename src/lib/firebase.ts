@@ -1,12 +1,13 @@
 
-// Import the functions you need from the SDKs you need
+// This file is being kept for now but its usage should be phased out
+// in favor of the new Furp API services.
+// It might still be used for parts of the app not yet migrated.
+
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider, connectAuthEmulator } from "firebase/auth";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -17,7 +18,6 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase
 let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
@@ -29,5 +29,19 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const googleAuthProvider = new GoogleAuthProvider();
+
+// IMPORTANT: The following lines are for local development with Firebase Emulators.
+// They should be REMOVED or commented out for deployment to a real environment.
+if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    try {
+        console.log("Connecting to Firebase Emulators...");
+        connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
+        connectFirestoreEmulator(db, "localhost", 8080);
+        console.log("Successfully connected to Firebase Emulators.");
+    } catch (e) {
+        console.error("Error connecting to Firebase emulators. Are they running?", e);
+    }
+}
+
 
 export { app, auth, db, storage, googleAuthProvider };

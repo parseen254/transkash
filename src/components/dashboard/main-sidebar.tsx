@@ -9,8 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/auth-context';
-import { auth } from '@/lib/firebase';
-import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { AppLogo } from '@/components/shared/app-logo';
 
@@ -37,12 +35,12 @@ interface MainSidebarProps {
 export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const { toast } = useToast();
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      logout();
       toast({
         title: 'Logged Out',
         description: 'You have been successfully logged out.',
@@ -58,13 +56,10 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
     }
   };
 
-  const getInitials = (name: string | null | undefined) => {
-    if (!name) return 'U';
-    const parts = name.split(' ');
-    if (parts.length > 1 && parts[0] && parts[parts.length - 1]) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-    return (name[0] || 'U').toUpperCase();
+  const getInitials = (firstName?: string, lastName?: string) => {
+    if (firstName && lastName) return `${firstName[0]}${lastName[0]}`.toUpperCase();
+    if (firstName) return firstName[0].toUpperCase();
+    return 'U';
   };
   
   const handleLinkClick = () => {
@@ -72,6 +67,8 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
       onLinkClick();
     }
   };
+
+  const displayName = user ? `${user.firstName} ${user.lastName}`.trim() : "User Name";
 
   return (
     <>
@@ -87,12 +84,9 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
         <div className="p-4 flex items-center justify-between gap-3 border-b border-sidebar-border shrink-0">
           <div className="flex items-center gap-3 overflow-hidden">
               <Avatar className="h-10 w-10">
-              {user?.photoURL ? (
-                  <AvatarImage src={user.photoURL} alt={user.displayName || 'User'} />
-              ) : (
-                  <AvatarImage src="https://placehold.co/100x100.png" alt={user?.displayName || "User"} data-ai-hint="user avatar" />
-              )}
-              <AvatarFallback>{user ? getInitials(user.displayName) : 'U'}</AvatarFallback>
+              {/* The API doesn't provide a photoURL for the user, so we use a placeholder */}
+              <AvatarImage src="https://placehold.co/100x100.png" alt={displayName} data-ai-hint="user avatar" />
+              <AvatarFallback>{user ? getInitials(user.firstName, user.lastName) : 'U'}</AvatarFallback>
               </Avatar>
               <div className="overflow-hidden">
               {loading ? (
@@ -102,7 +96,7 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
                   </>
               ) : user ? (
                   <>
-                  <p className="text-sm font-semibold text-sidebar-foreground truncate" title={user.displayName || "User Name"}>{user.displayName || 'User Name'}</p>
+                  <p className="text-sm font-semibold text-sidebar-foreground truncate" title={displayName}>{displayName}</p>
                   <p className="text-xs text-sidebar-foreground/80 truncate" title={user.email || ""}>{user.email}</p>
                   </>
               ) : (
@@ -142,7 +136,6 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
         <Separator className="bg-sidebar-border shrink-0" />
         
         <div className="p-4 space-y-2 mt-auto shrink-0">
-           {/* Seed Data Button Removed */}
            <Button 
               variant="ghost" 
               className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -157,7 +150,6 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
           </Button>
         </div>
       </div>
-      {/* SeedDataDialog instance removed from here */}
     </>
   );
 }
