@@ -1,0 +1,21 @@
+{
+    "servers": {
+        "context7": {
+            "url": "https://mcp.context7.com/mcp",
+            "type": "http",
+            "headers": {
+                "CONTEXT7_API_KEY": "ctx7sk-dc7feaf7-2063-4b9a-b856-5c6ec49f3a41"
+            }
+        },
+        "sequentialthinking": {
+            "command": "docker",
+            "args": [
+                "run",
+                "--rm",
+                "-i",
+                "mcp/sequentialthinking"
+            ]
+        }
+    },
+    "inputs": []
+}
