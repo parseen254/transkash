@@ -1,12 +1,18 @@
-
 // src/app/api/proxy/[[...slug]]/route.ts
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-const FURP_API_BASE_URL = 'https://furp02-staging.funtechcom.com/api/v1/mito';
-const FURP_API_KEY = 'd2783dc0-0ebc-4980-98ec-6203215f81ec';
+// Never hardcode secrets. Read from environment with sensible defaults for local dev only.
+const FURP_API_BASE_URL = process.env.NEXT_PUBLIC_MITO_BASE_URL || process.env.MITO_API_BASE_URL || 'https://furp02-staging.funtechcom.com/api/v1/mito';
+const FURP_API_KEY = process.env.MITO_API_KEY;
 
 async function handler(req: NextRequest) {
+  if (!FURP_API_KEY) {
+    return NextResponse.json(
+      { message: 'MITO API key not configured on server' },
+      { status: 500 }
+    );
+  }
   const { pathname, search } = new URL(req.url);
   // Reconstruct the path to forward to the Furp API
   const apiPath = pathname.replace('/api/proxy', '');

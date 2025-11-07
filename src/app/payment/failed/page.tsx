@@ -25,12 +25,19 @@ const PaymentFailedContent: React.FC = () => {
 
   useEffect(() => {
     const id = searchParams.get('paymentLinkId');
+    const ref = searchParams.get('ref'); // MITO reference
     const reasonFromQuery = searchParams.get('reason'); 
     
     setPaymentLinkIdForRetry(id); 
-    if (reasonFromQuery) {
-      setFailureReason(decodeURIComponent(reasonFromQuery)); // Decode the reason
-    } 
+    
+    // Set failure reason based on query parameter
+    if (reasonFromQuery === 'cancelled') {
+      setFailureReason('Payment was cancelled.');
+    } else if (reasonFromQuery === 'failed') {
+      setFailureReason('Payment failed. Please try again.');
+    } else if (reasonFromQuery) {
+      setFailureReason(decodeURIComponent(reasonFromQuery));
+    }
 
     if (id) {
       setLoading(true);
@@ -55,8 +62,12 @@ const PaymentFailedContent: React.FC = () => {
         }
       };
       fetchLinkDetails();
+    } else if (ref) {
+      // If only reference provided, show failure message
+      console.log('Payment failed, reference:', ref);
+      setLoading(false);
     } else {
-      setError("Payment link ID not provided.");
+      setError("Payment reference not provided.");
       setLoading(false);
       setPaymentLink(null); 
     }

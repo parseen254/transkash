@@ -59,7 +59,7 @@ const EditPaymentLinkPage: NextPage = () => {
   const { id: paymentLinkIdString } = params;
   const paymentLinkId = paymentLinkIdString as string;
   const { toast } = useToast();
-  const { user, loading: authLoading, initialLoadComplete } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [loadingPageData, setLoadingPageData] = useState(true);
   const [payoutAccounts, setPayoutAccounts] = useState<PayoutAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
@@ -82,7 +82,7 @@ const EditPaymentLinkPage: NextPage = () => {
   const watchHasExpiry = form.watch('hasExpiry');
 
   useEffect(() => {
-    if (!initialLoadComplete) return;
+    if (authLoading) return;
 
     if (!user) {
         router.push('/login');
@@ -134,7 +134,7 @@ const EditPaymentLinkPage: NextPage = () => {
       setLoadingPageData(false); // No ID, so no data to load for link
       return () => unsubscribeAccounts();
     }
-  }, [paymentLinkId, user, initialLoadComplete, form, router, toast]);
+  }, [paymentLinkId, user, form, router, toast]);
 
   const onSubmit = async (data: EditPaymentLinkFormValues) => {
     if (!user || !paymentLinkId) return;
@@ -161,7 +161,7 @@ const EditPaymentLinkPage: NextPage = () => {
     }
   };
 
-  const isLoading = authLoading || !initialLoadComplete || loadingPageData || loadingAccounts;
+  const isLoading = authLoading  || loadingPageData || loadingAccounts;
 
   if (isLoading) {
     return (

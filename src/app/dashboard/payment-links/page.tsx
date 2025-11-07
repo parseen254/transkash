@@ -181,7 +181,7 @@ const PaymentLinksTable: React.FC<{
 
 
 const PaymentLinksPage: NextPage = () => {
-  const { user, loading: authLoading, initialLoadComplete } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [allLinks, setAllLinks] = useState<PaymentLink[]>([]);
@@ -192,7 +192,7 @@ const PaymentLinksPage: NextPage = () => {
   const [currentPageInactive, setCurrentPageInactive] = useState(1);
 
   useEffect(() => {
-    if (!initialLoadComplete) return; 
+    if (authLoading) return; 
 
     if (!user) {
       router.push('/login');
@@ -219,7 +219,7 @@ const PaymentLinksPage: NextPage = () => {
     });
 
     return () => unsubscribe();
-  }, [user, initialLoadComplete, router, toast]);
+  }, [user, router, toast]);
 
   const handleDelete = async (id: string, linkName: string) => {
     if (!user) {
@@ -289,7 +289,7 @@ const PaymentLinksPage: NextPage = () => {
   }, [inactiveLinks, currentPageInactive]);
 
 
-  if (authLoading || (!user && !initialLoadComplete)) { 
+  if (authLoading || !user) { 
      return (
         <div className="flex justify-center items-center h-full p-8">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />

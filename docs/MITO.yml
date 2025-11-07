@@ -1,0 +1,1863 @@
+openapi: 3.0.1
+info:
+  title: Furp API
+  description: API for user management, Providers, corridors, rate validation, beneficiaries, and transactions.
+  version: 1.0.0
+
+servers:
+  - url: https://furp02-staging.funtechcom.com/api/v1
+
+x-tagGroups:
+
+  - name: Authentication
+    tags: [Auth]
+  - name: User Management
+    tags: [User]
+  - name: Balances
+    tags: [balances]
+  - name: Provider
+    tags: [Provider]
+  - name: Corridors
+    tags: [Corridor]
+  - name: Beneficiaries
+    tags: [Beneficiary]
+  - name: Rate & FX
+    tags: [Rate]
+  - name: Transactions
+    tags: [Transactions]
+  - name: Reference
+    tags: [Reference]
+
+tags:
+  - name: User
+    description: Manage users and their KYC status.
+  - name: Provider
+    description: Retrieve Provider based on location and service.
+  - name: Corridor
+    description: View available corridors for international or local transfers.
+  - name: Beneficiary
+    description: Manage beneficiaries and requirements for various services.
+  - name: Rate
+    description: Validate and retrieve rates and associated transfer fees.
+  - name: Transactions
+    description: Initiate and retrieve transaction details.
+
+
+paths:
+  
+  /auth/login:
+    post:
+      operationId: login
+      summary: Authenticate user and get token
+      tags: [Auth]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication successful, returns JWT token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+
+  /users:
+    get:
+      operationId: getUsers
+      summary: Get all users
+      tags: [User]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: PageNo
+          required: false
+          schema:
+            type: integer
+            default: 1
+          description: Page number for pagination
+        - in: query
+          name: PageSize
+          required: false
+          schema:
+            type: integer
+            default: 10
+          description: Number of items per page
+        - in: query
+          name: email
+          schema:
+            type: string
+          description: Filter by user email (optional)
+        - in: query
+          name: countryIso3
+          schema:
+            type: string
+          description: Filter by country ISO3 (optional)
+        - in: query
+          name: fromDate
+          schema:
+            type: string
+            format: date
+          description: Filter users created from this date (optional, YYYY-MM-DD)
+        - in: query
+          name: toDate
+          schema:
+            type: string
+            format: date
+          description: Filter users created up to this date (optional, YYYY-MM-DD)
+      responses:
+        '200':
+          description: A paged list of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedUserResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+    post:
+      summary: Create a new user
+      operationId: createUser
+      tags: [User]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+      responses:
+        '200':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCreatedResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /users/{userId}:
+    get:
+      operationId: getUserById
+      summary: Get user by ID
+      tags: [User]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+          description: User's unique ID
+      responses:
+        '200':
+          description: A single user with KYC status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetailed'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+  /users/{userId}/balances:
+    get:
+      operationId: getBalanceByCurrency
+      summary: Get Balance by Currency
+      tags: [balances]
+      security:
+        - BearerAuth: []
+      description: >
+        Retrieve the available balance for a specific currency for a user.  
+        The currency must be provided as a path parameter (3-letter ISO code).  
+        Optionally filter by `userId` using a query parameter.  
+        The response includes balance details and related funding accounts.
+      parameters:
+        - name: currency
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Three-letter ISO 4217 currency code (e.g., USD, GBP).
+        - name: userId
+          in: path
+          required: false
+          schema:
+            type: string
+          description: Optional user identifier to filter the balance.
+      responses:
+        '200':
+          description: Success. Returns balance information and funding accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+        '404':
+          description: Balance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+  /lookups/provider:
+    get:
+      operationId: getProviderByCountryCurrencyService
+      summary: Get provider by country, currency, and service
+      tags: [Provider]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: countryiso3
+          required: true
+          schema:
+            type: string
+          example: NGA
+        - in: query
+          name: CurrencyCode
+          required: true
+          schema:
+            type: string
+          example: NGN
+        - in: query
+          name: ServiceCode
+          required: true
+          schema:
+            type: string
+            enum: [MOBILETOPUP, MONEYTRANSFER, BILLPAYMENT]
+        - in: query
+          name: CollectionMode
+          required: false
+          schema:
+            type: string
+            enum: [MOBILEMONEY, BANKACCOUNT, CASH]
+      responses:
+        '200':
+          description: List of Providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Providers'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /exchange/Corridors:
+    get:
+      operationId: getCorridors
+      summary: Get corridors
+      tags: [Corridor]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: ServiceCode
+          required: true
+          schema:
+            type: string
+            enum: [MOBILETOPUP, MONEYTRANSFER, BILLPAYMENT]
+      responses:
+        '200':
+          description: List of corridors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Corridor'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /exchange/rates:
+    post:
+      operationId: validateRate
+      summary:  rate
+      tags: [Rate]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateRateRequest'
+      responses:
+        '200':
+          description: Validated rate and fees
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateRateResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /beneficiaries/requirements:
+    get:
+      operationId: getBeneficiaryRequirements
+      summary: Get Beneficiary Requirements
+      tags: [Beneficiary]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: providerId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: toCountry
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: toCurrencyCode
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: entityType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [I, B]
+            description: |
+              Legal entity type code:
+                - I = Individual
+                - B = Business
+        - name: ServiceCode
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [MOBILETOPUP, MONEYTRANSFER, BILLPAYMENT]
+        - name: collectionMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [MOBILEMONEY, BANKACCOUNT, CASH]
+      responses:
+        '200':
+          description: Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  responseType:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BeneficiaryRequirement'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /beneficiaries:
+    post:
+      summary: Create Beneficiary
+      operationId: createBeneficiary
+      description: >
+        This request is used to create a beneficiary. 
+        Field requirements (required vs optional) are determined dynamically by calling the `GetBeneficiaryRequirements` API.
+        - Fields where `isDisplayable=true` and `isRequired=true` MUST be included and are **required**.
+        - Fields where `isDisplayable=true` and `isRequired=false` are **optional**.
+        - Fields not returned in `GetBeneficiaryRequirements` should be omitted.
+      tags: [Beneficiary]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBeneficiaryRequest'
+      responses:
+        '200':
+          description: Beneficiary created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateBeneficiaryResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+    get:
+      summary: Get Beneficiaries
+      operationId: getBeneficiaries
+      tags: [Beneficiary]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: SearchingText
+          description: Searching text
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: UserId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: serviceCode
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: collectionMode
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: legalEntityType
+          required: true
+          schema:
+            type: string
+            enum: [I, B]
+            description: |
+              Legal entity type code:
+                - I = Individual
+                - B = Business
+        - in: query
+          name: countryIso3
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: currencyIso
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: PageNo
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: PageSize
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Paged list of beneficiaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedBeneficiaryResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+  /beneficiaries/{beneficiaryId}:
+    get:
+      operationId: getBeneficiaryById
+      summary: Get Beneficiary by ID
+      tags: [Beneficiary]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: beneficiaryId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Beneficiary details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedBeneficiaryResponse'
+  /transactions:
+    post:
+      summary: Initiate a new transaction
+      operationId: initiateTransaction
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      description: >
+        This API initiates a transaction by capturing the necessary details like sender/receiver countries, currencies, 
+        amounts, service type, and collection mode. If a `beneficiaryId` is provided, the Hosted-Pages will skip 
+        beneficiary collection and proceed to payment. Otherwise, a Hosted-Page will prompt the user to input beneficiary details.
+        This is the primary entry point that triggers MITO’s payment flow, including Hosted KYC and Hosted Payment steps.
+        Upon calling this endpoint, MITO returns a URL for a secure Hosted-Page (iframe/WebView) where the customer completes
+        payment and any missing data. MITO handles PCI and KYC responsibilities end-to-end from this point.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiateTransactionRequest'
+      responses:
+        '200':
+          description: Transaction initiated or HPP returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiateTransactionResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+    get:
+      operationId: getTransactions
+      summary: Get Transactions
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: userId
+          schema:
+            type: string
+
+        - in: query
+          name: fromDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: toDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: PageNo
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: PageSize
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedTransactionResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /transactions/by-reference:
+    get:
+      summary: Get Transaction by Reference or Partner Reference Number
+      operationId: getTransactionByReference
+      tags: [Transactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: reference
+          required: false
+          schema:
+            type: string
+          description: Transaction reference (optional)
+        - in: query
+          name: partnerReferenceNumber
+          required: false
+          schema:
+            type: string
+          description: Partner reference number (optional)
+      responses:
+        '200':
+          description: Transaction details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '404':
+          description: Transaction not found
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+  /lookups/types:
+    get:
+      summary: Retrieve types
+      operationId: getTypes
+      description: |
+        Retrieve various types required for creating transactions.  
+        For example, to get all available delivery modes, use the endpoint with the filter: `/types?filter=transaction-types`.
+      tags: [Reference]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: filter
+          schema:
+            type: string
+            example: reason,source-of-funds
+            description: >
+              Filter the static data by type (comma-separated).  
+              Allowed values:  
+                - reason  
+                - source-of-funds
+                - relationships  
+                - identification-types  
+              If not provided, returns all types.
+      responses:
+        '200':
+          description: List of requested types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TypesResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+  /webhooks:
+    post:
+      operationId: receiveWebhook
+      summary: Transaction Status Update Webhook
+      tags: [Reference]
+      security:
+        - BearerAuth: []
+      description: >
+        MITO sends a POST request to this webhook URL to notify partners of transaction status changes 
+        and provide the transaction ID.  
+        The `webhookUrl` must be provided in the `InitiateTransactionRequest`.  
+        Ensure this endpoint is publicly accessible and can handle incoming HTTPS POST requests.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionStatusEvent'
+      responses:
+        '200':
+          description: Acknowledged
+        '400':
+          description: Bad request - Invalid payload or missing fields
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: ApiKey
+  schemas:
+    # Reusable metadata wrapper for API responses
+    NameCodePair:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+      required:
+        - name
+        - code
+    NameIdPair:
+      type: object
+      properties:
+        name:
+          type: string
+        Id:
+          type: string
+      required:
+        - name
+        - code
+
+    TypesResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          description: |
+            **System Configuration Types**  
+            Contains all available system configuration options
+          properties:
+            transactionType:
+              type: array
+              items:
+                $ref: "#/components/schemas/NameCodePair"
+              description: |
+                **Transaction Types**  
+                - Money Transfer  
+                - Bill Payment  
+                - Airtime Topup
+            collectionMode:
+              type: array
+              items:
+                $ref: "#/components/schemas/NameCodePair"
+              description: |
+                **Collection Modes**  
+                Supported fund collection methods
+            identificationType:
+              type: array
+              items:
+                $ref: "#/components/schemas/NameIdPair"
+              description: |
+                **ID Document Types**  
+                Acceptable identificationType documents
+            relationships:
+              type: array
+              items:
+                $ref: "#/components/schemas/NameIdPair"
+              description: |
+                **Relationships**  
+                Beneficiary relation options
+            reason:
+              type: array
+              items:
+                $ref: "#/components/schemas/NameIdPair"
+              description: |
+                **Transaction reason**  
+                Reasons for money transfer
+            sourceOfFunds:
+              type: array
+              items:
+                $ref: "#/components/schemas/NameIdPair"
+              description: |
+                **Fund Sources**  
+                Origin of transferred funds
+          required:
+            - transactionType
+            - collectionMode
+            - identificationType
+            - relationships
+            - reason
+            - sourceOfFunds
+        code:
+          type: integer
+        message:
+          type: string
+        responseType:
+          type: string
+      required:
+        - data
+        - code
+        - message
+        - responseType
+    StandardResponse:
+      type: object
+      properties:
+        data:
+          type: object
+        code:
+          type: integer
+        message:
+          type: string
+    LoginResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+              description: JWT access token
+            issuedOn:
+              type: string
+              format: date-time
+              description: Token issued datetime (ISO 8601)
+            expiresOn:
+              type: string
+              format: date-time
+              description: Token expiry datetime (ISO 8601)
+            refreshToken:
+              type: string
+              description: Refresh token
+        message:
+          type: string
+          example: Authenticated
+        code:
+          type: integer
+          example: 200
+        responseType:
+          type: string
+          example: Success
+      required:
+        - data
+        - message
+        - code
+        - responseType
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        AccessServiceNumber:
+          type: string
+        AccessAffiliateNumber:
+          type: string
+    
+    
+    
+    BeneficiaryRequirement:
+      type: object
+      properties:
+        label:
+          type: string
+        name:
+          type: string
+        order:
+          type: integer
+        type:
+          type: string
+          description: The type of the column Banking, Personal.
+        format:
+          type: string
+          description: The format of the column.
+          nullable: true
+        columnDataType:
+          type: string
+          description: The data type of the column.
+        isRequired:
+          type: boolean
+        isDisplayable:
+          type: boolean
+        fieldInformation:
+          type: string
+          nullable: true
+        dropdownOptions:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              id:
+                type: string
+      required:
+        - label
+        - name
+        - order
+        - type
+        - columnDataType
+        - isRequired
+        - isDisplayable
+    
+    
+    UserBasic:
+      type: object
+      properties:
+        countryIso3:
+          type: string
+          description: The user's country (ISO 3166-1 alpha-3).
+        userId:
+          type: string
+        email:
+          type: string
+          format: email
+        phoneNumber:
+          type: string
+          description: The user's phone number.
+        firstName:
+          type: string
+        middleName:
+          type: string
+          description: The user's middle name (optional).
+        lastName:
+          type: string
+        legalEntityType:
+          type: string
+          enum: [I, B]
+          description: >
+            Legal entity type code:
+              - I = Individual
+              - B = Business
+        created_at:
+          type: string
+          description: Date/time the record was created (ISO 8601).
+      required:
+        - userId
+        - email
+        - firstName
+        - lastName
+
+    UserDetailed:
+      allOf:
+        - $ref: '#/components/schemas/UserBasic'
+        - type: object
+
+    UserCreateRequest:
+      type: object
+      required:
+        - email
+        - firstName
+        - lastName
+        - gender
+        - legalEntityType
+      properties:
+        countryIso3:
+          type: string
+          description: The user's country (ISO 3166-1 alpha-3).
+        email:
+          type: string
+          format: email
+          description: The user's email address.
+        phoneNumber:
+          type: string
+          description: The user's phone number.
+        firstName:
+          type: string
+          description: The user's first name.
+        middleName:
+          type: string
+          description: The user's middle name (optional).
+        lastName:
+          type: string
+          description: The user's last name.
+        gender:
+          type: string
+          enum: [M, F]
+          description: |
+            Gender code:
+              - M = Male
+              - F = Female
+        legalEntityType:
+          type: string
+          enum: [I, B]
+          description: >
+            Legal entity type code:
+              - I = Individual
+              - B = Business
+        CompanyNumber:
+          type: string
+          description: Company registration number (required if legalEntityType is Business).
+        BusinessName:
+          type: string
+          description: Registered business name (required if legalEntityType is Business).
+
+    UserCreatedResponse:
+      allOf:
+        - $ref: '#/components/schemas/UserDetailed'
+
+    Providers:
+      allOf:
+        - $ref: '#/components/schemas/StandardResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProvidersDetails'
+    ProvidersDetails:
+      type: object
+      properties:
+        providerCode:
+          type: string
+        providerName:
+          type: string
+        providerId:
+          type: string
+        isGeneric:
+          type: boolean
+          description: Indicates if the provider is generic e.g. if any country we have Generic provider that can be used for all provider in that country.
+
+      required:
+        - providerCode
+        - providerName
+        - provider
+        - isGeneric
+
+    CollectionMode:
+      type: object
+      properties:
+        name:
+          type: string
+        shortCode:
+          type: string
+      required:
+        - name
+        - shortCode
+
+    Corridor:
+      allOf:
+        - $ref: '#/components/schemas/StandardResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/CorridorDetails'
+    CorridorDetails:
+      type: object
+      properties:
+        corridorCode:
+          type: string
+        fromCountryIso2:
+          type: string
+        fromCountryIso3:
+          type: string
+        fromCountryName:
+          type: string
+        fromCurrencyIso3:
+          type: string
+        toCountryIso2:
+          type: string
+        toCountryIso3:
+          type: string
+        toCountryName:
+          type: string
+        toCurrencyIso3:
+          type: string
+        minSendValue:
+          type: number
+        maxSendValue:
+          type: number
+        minReceiveValue:
+          type: number
+        maxReceiveValue:
+          type: number
+        collectionModes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionMode'
+      required:
+        - corridorCode
+        - fromCountryIso2
+        - fromCountryIso3
+        - fromCountryName
+        - fromCurrencyIso3
+        - toCountryIso2
+        - toCountryIso3
+        - toCountryName
+        - toCurrencyIso3
+        - minSendValue
+        - maxSendValue
+        - minReceiveValue
+        - maxReceiveValue
+        - collectionModes
+
+    ValidateRateRequest:
+      type: object
+      required:
+        - userId
+        - fromCountry
+        - toCountry
+        - fromCurrency
+        - toCurrency
+        - amount
+        - direction
+        - serviceCode
+        - providerId
+      properties:
+        userId:
+          type: string
+          description: Unique identifier of the user requesting the rate.
+        serviceCode:
+          type: string
+          enum: [MOBILETOPUP, MONEYTRANSFER, BILLPAYMENT]
+          description: >
+            Type of service being requested.  
+            Allowed values: MOBILETOPUP, MONEYTRANSFER, BILLPAYMENT.  
+        collectionMode:
+          type: string
+          enum: [MOBILEMONEY, BANKACCOUNT, CASH]
+          description: >
+            Mode of fund collection for the recipient.  
+            Allowed values: MOBILEMONEY, BANKACCOUNT, CASH.  
+        fromCountry:
+          type: string
+          description: ISO 3166-1 alpha-3 code of the sending country.
+        toCountry:
+          type: string
+          description: ISO 3166-1 alpha-3 code of the receiving country.
+        fromCurrency:
+          type: string
+          description: ISO 4217 currency code of the sending currency.
+        toCurrency:
+          type: string
+          description: ISO 4217 currency code of the receiving currency.
+        amount:
+          type: number
+          format: float
+          description: Amount to convert (in the sending currency).
+        direction:
+          type: string
+          enum: [S, R]
+          description: >
+            Direction of the rate:  
+            - `S` for Send  
+            - `R` for Receive
+        providerId:
+          type: string
+          description: >
+            Unique identifier of the provider.  
+            Use the `/lookups/provider` API to retrieve the list of available provider.
+
+    ValidateRateResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                commission:
+                  type: number
+                fromCountry:
+                  type: string
+                fromCurrency:
+                  type: string
+                id:
+                  type: string
+                code:
+                  type: string
+                rate:
+                  type: number
+                rateType:
+                  type: string
+                receiveAmount:
+                  type: number
+                sendAmount:
+                  type: number
+                service:
+                  type: string
+                toCountry:
+                  type: string
+                toCurrency:
+                  type: string
+                isKycRequired:
+                  type: boolean
+                paymentMethods:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      paymentMethodCode:
+                        type: string
+                      fees:
+                        type: number
+                collectionModes:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/CollectionMode'
+              required:
+                - commission
+                - fromCountry
+                - toCountry
+                - sendAmount
+                - receiveAmount
+                - rate
+                - providerId
+                - isKycRequired
+            code:
+              type: integer
+            message:
+              type: string
+
+    InitiateTransactionRequest:
+      type: object
+      required:
+        - serviceCode
+        - collectionMode
+        - sendCountryIso3
+        - receiveCountryIso3
+        - sendCurrency
+        - receiveCurrency
+        - sendAmount
+        - rateId
+        - providerId
+        - userId
+        - successUrl
+        - cancelUrl
+        - failureUrl
+        - PartnerReferenceNumber
+      properties:
+        serviceCode:
+          type: string
+          enum: [MOBILETOPUP, MONEYTRANSFER, BILLPAYMENT]
+          description: >
+            Type of service being requested.  
+            Allowed values: MOBILETOPUP, MONEYTRANSFER, BILLPAYMENT.  
+        collectionMode:
+          type: string
+          enum: [MOBILEMONEY, BANKACCOUNT, CASH]
+          description: >
+            Mode of fund collection for the recipient.  
+            Allowed values: MOBILEMONEY, BANKACCOUNT, CASH.  
+        PartnerReferenceNumber:
+          type: string
+          description: >
+            Unique request ID for idempotency.  
+            If provided, the system will return the existing transaction if it
+            exists, instead of creating a new one.
+        userId:
+          type: string
+          description: User's unique identifier.
+        beneficiaryId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional beneficiary ID. If omitted, Hosted-Pages will prompt user to enter details.
+        
+        reasonId:
+          type: string
+          description: >
+            Reason for remittance.  
+            Use the `/types?filter=reason` endpoint to get a list of allowed types.
+        otherReason:
+          type: string
+          description: >
+            Additional notes for remittance reason.  
+            **Conditional**: Required if `reasonId` is "Others".
+        sourceOfFundId:
+          type: string
+          description: >
+            Identifier of the source of funds.  
+            Use the `/types?filter=source-of-funds` endpoint to get a list of allowed types.
+        otherSourceOfFund:
+          type: string
+          nullable: true
+          description: >
+            Text description explaining the source of funds in detail.  
+            **Conditional**: Required if `sourceOfFundId` is "Others".
+        paymentNarration:
+          type: string
+          nullable: true
+          description: Optional text for transaction description or note.
+        sendCountryIso3:
+          type: string
+          description: >
+            ISO 3166-1 alpha-3 code of the country sending the funds.  
+            Example: "USA"
+        receiveCountryIso3:
+          type: string
+          description: >
+            ISO 3166-1 alpha-3 code of the country receiving the funds.  
+            Example: "NGA"
+        sendCurrency:
+          type: string
+          description: >
+            ISO 4217 currency code of the sending currency.  
+            Example: "USD"
+        receiveCurrency:
+          type: string
+          description: >
+            ISO 4217 currency code of the receiving currency.  
+            Example: "NGN"
+        sendAmount:
+          type: number
+          format: float
+          description: Amount to be sent in the sending currency.
+        rateId:
+          type: string
+          format: uuid
+          description: Unique identifier for the selected exchange rate.
+        providerId:
+          type: string
+          format: uuid
+          description: Unique identifier for the provider.
+        redirectUrl:
+          type: string
+          format: uri
+          description: URL to redirect to after successful transaction initiation.
+        webhookUrl:
+          type: string
+          format: uri
+          description: >
+            Endpoint where MITO will POST transaction updates (e.g. status, transactionId).
+            Ensure this URL is publicly accessible and secure (HTTPS recommended).
+    InitiateTransactionResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                reference:
+                  type: string
+                status:
+                  type: string
+                  enum: [PROCESSED, AWAITINGAFFILIATEUPDATE, INREVIEW, FAILED, CANCELLED, INPROGRESS, NEW]
+                PaymentUrl:
+                  type: string
+
+
+    Beneficiary:
+      type: object
+      properties:
+        beneficiaryId:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        emailAddress:
+          type: string
+          format: email
+        countryIso3:
+          type: string
+        currencyIso:
+          type: string
+        providerId:
+          type: string
+        legalEntityType:
+          type: string
+          enum: [Individual, Business]
+        collectionMode:
+          type: string
+          enum: [MOBILEMONEY, BANKACCOUNT,CASH]
+        serviceCode:
+          type: string
+      required:
+        - beneficiaryId
+        - firstName
+        - lastName
+        - countryIso3
+        - currencyIso
+        - providerId
+        - legalEntityType
+        - collectionMode
+        - serviceCode
+
+    CreateBeneficiaryRequest:
+      type: object
+      required:
+        - serviceCode
+        - collectionMode
+        - legalEntityType
+        - countryIso3
+        - currencyIso
+        - providerId
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: Unique identifier of the user creating the beneficiary.
+        serviceCode:
+          type: string
+          enum: [MOBILETOPUP, MONEYTRANSFER, BILLPAYMENT]
+          description: Type of service to be performed (e.g., MOBILETOPUP, MONEYTRANSFER, BILLPAYMENT).
+        collectionMode:
+          type: string
+          enum: [MOBILEMONEY, BANKACCOUNT, CASH]
+          description: Mode of fund collection (e.g., MOBILEMONEY, BANKACCOUNT, CASH).
+        legalEntityType:
+          type: string
+          enum: [I, B]
+          description: |
+            Legal entity type code:
+              - I = Individual
+              - B = Business
+        countryIso3:
+          type: string
+          description: ISO 3166-1 alpha-3 code of the beneficiary's country (e.g., USA, IND).
+        currencyIso:
+          type: string
+          description: ISO 4217 currency code (e.g., USD, INR).
+        providerId:
+          type: string
+          description: Identifier of the financial provider or service channel.
+        branchId:
+          type: string
+          nullable: true
+          description: Optional branch identifier if applicable.
+        beneficiaryNickname:
+          type: string
+          nullable: true
+          description: Optional nickname for the beneficiary for internal reference.
+        beneficiaryEmailAddress:
+          type: string
+          format: email
+          nullable: true
+          description: Email address of the beneficiary.
+        companyName:
+          type: string
+          nullable: true
+          description: Company name if the beneficiary is a business entity.
+        firstName:
+          type: string
+          description: First name of the beneficiary.
+        lastName:
+          type: string
+          description: Last name of the beneficiary.
+        dob:
+          type: string
+          format: date
+          description: Date of birth of the beneficiary in YYYY-MM-DD format.
+        gender:
+          type: string
+          enum: [M, F]
+          description: Gender of the beneficiary.
+        mobileNo:
+          type: string
+          description: Mobile number of the beneficiary.
+        postcode:
+          type: string
+          description: Postal code of the beneficiary's address.
+        city:
+          type: string
+          description: City of the beneficiary's residence.
+        address:
+          type: string
+          description: Street address of the beneficiary.
+        addressLine2:
+          type: string
+          nullable: true
+          description: Additional address information (optional).
+        district:
+          type: string
+          nullable: true
+          description: District or locality (optional).
+        stateOrProvince:
+          type: string
+          nullable: true
+          description: State or province of residence (optional).
+        nationalityCountry:
+          type: string
+          description: Country of nationality.
+        birthCountry:
+          type: string
+          description: Country of birth.
+        reasonId:
+          type: string
+          nullable: true
+          description: Reason for creating the beneficiary (optional).
+        relationId:
+          type: string
+          nullable: true
+          description: Relation to the beneficiary (optional).
+        sourceOfFundId:
+          type: string
+          nullable: true
+          description: Source of funds for the transaction (optional).
+        narration:
+          type: string
+          nullable: true
+          description: Optional description or message associated with the transaction.
+        bankAccountEmail:
+          type: string
+          format: email
+          nullable: true
+          description: Email address linked to the bank account (optional).
+        branchCode:
+          type: string
+          nullable: true
+          description: Bank branch code (optional).
+        ifsc:
+          type: string
+          nullable: true
+          description: Indian Financial System Code (optional).
+        aba:
+          type: string
+          nullable: true
+          description: ABA routing number (optional, used in US).
+        bankAddress:
+          type: string
+          nullable: true
+          description: Address of the beneficiary's bank (optional).
+        institutionNo:
+          type: string
+          nullable: true
+          description: Institution number (used in Canada, optional).
+        bankName:
+          type: string
+          nullable: true
+          description: Name of the beneficiary's bank (optional).
+        clabe:
+          type: string
+          nullable: true
+          description: CLABE code used in Mexico (optional).
+        bicSwift:
+          type: string
+          nullable: true
+          description: SWIFT/BIC code for international bank transfers (optional).
+        acctNumber:
+          type: string
+          nullable: true
+          description: Bank account number (optional).
+        sortCode:
+          type: string
+          nullable: true
+          description: UK sort code for banks (optional).
+        iban:
+          type: string
+          nullable: true
+          description: International Bank Account Number (optional).
+        bsbCode:
+          type: string
+          nullable: true
+          description: Bank State Branch code used in Australia (optional).
+        cnaps:
+          type: string
+          nullable: true
+          description: CNAPS code used in China (optional).
+        identificationNumber:
+          type: string
+          nullable: true
+          description: Identification document number (optional).
+        idIssuingCountry:
+          type: string
+          nullable: true
+          description: Country that issued the identification document (optional).
+        idIssueDate:
+          type: string
+          format: date
+          nullable: true
+          description: Date when the identification document was issued (optional).
+        identificationType:
+          type: string
+          nullable: true
+          description: Type of identification document (e.g., passport, ID card, etc.).
+        idExpiryDate:
+          type: string
+          format: date
+          nullable: true
+          description: Expiration date of the identification document (optional).
+        billReferenceNumber:
+          type: string
+          nullable: true
+          description: Bill reference number for bill payment services (optional).
+
+    CreateBeneficiaryResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                beneficiaryId:
+                  type: string
+                status:
+                  type: string
+                message:
+                  type: string
+              required:
+                - beneficiaryId
+                - status
+                - message
+
+    BeneficiaryUpdateRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        emailAddress:
+          type: string
+          format: email
+        collectionMode:
+          type: string
+        countryIso3:
+          type: string
+        currencyIso:
+          type: string
+        providerId:
+          type: string
+        legalEntityType:
+          type: string
+          enum: [Individual, Business]
+        serviceCode:
+          type: string
+
+    PagedBeneficiaryResponse:
+      allOf:
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Beneficiary'
+            pageSize:
+              type: integer
+            currentPage:
+              type: integer
+            totalCount:
+              type: integer
+            totalPages:
+              type: integer
+            hasPreviousPage:
+              type: boolean
+            hasNextPage:
+              type: boolean
+          required:
+            - data
+            - pageSize
+            - currentPage
+            - totalCount
+            - totalPages
+            - hasPreviousPage
+            - hasNextPage
+    
+    TransactionResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                partnerReferenceNumber:
+                  type: string
+                reference:
+                  type: string
+                status:
+                  type: string
+                  enum: [PROCESSED, AWAITINGAFFILIATEUPDATE, INREVIEW, FAILED, CANCELLED, INPROGRESS, NEW]
+                sendAmount:
+                  type: number
+                receiveAmount:
+                  type: number
+                sendCurrency:
+                  type: string
+                sendCountryIso3:
+                  type: string
+                receiveCurrency:
+                  type: string
+                receiveCountryIso3:
+                  type: string
+                rate:
+                  type: number
+                createdAt:
+                  type: string
+                  format: date-time
+              required:
+                - id
+                - partnerReferenceNumber
+                - reference
+                - status
+                - sendAmount
+                - receiveAmount
+                - sendCurrency
+                - sendCountryIso3
+                - receiveCurrency
+                - receiveCountryIso3
+                - rate
+                - createdAt
+    TransactionStatusEvent:
+      type: object
+      required:
+        - transactionId
+        - status
+        - updatedAt
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+          description: Unique identifier of the transaction.
+        status:
+          type: string
+          enum: [PROCESSED, AWAITINGAFFILIATEUPDATE, INREVIEW, FAILED, CANCELLED, INPROGRESS, NEW]
+          description: Current status of the transaction.
+        reason:
+          type: string
+          nullable: true
+          description: Optional message explaining the reason for failure or status.
+        updatedAt:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the status was updated.
+    PagedTransactionResponse:
+      allOf:
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/TransactionResponse'
+            pageSize:
+              type: integer
+            currentPage:
+              type: integer
+            totalCount:
+              type: integer
+            totalPages:
+              type: integer
+              description: "Calculated as ceil(totalCount / pageSize)"
+            hasPreviousPage:
+              type: boolean
+            hasNextPage:
+              type: boolean
+          required:
+            - data
+            - pageSize
+            - currentPage
+            - totalCount
+            - totalPages
+            - hasPreviousPage
+            - hasNextPage
+    TunWallet:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [tun_wallet]
+        
+        currency:
+          type: string
+        amount:
+          type: string
+
+    PagedUserResponse:
+      allOf:
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserBasic'
+            pageSize:
+              type: integer
+            currentPage:
+              type: integer
+            totalCount:
+              type: integer
+            totalPages:
+              type: integer
+            hasPreviousPage:
+              type: boolean
+            hasNextPage:
+              type: boolean
+          required:
+            - data
+            - pageSize
+            - currentPage
+            - totalCount
+            - totalPages
+            - hasPreviousPage
+            - hasNextPage
+    FundingAccountWallet:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [funding_account]
+        account_number:
+          type: string
+        account_number_type:
+          type: string
+        account_holder_name:
+          type: string
+        bank_name:
+          type: string
+        bank_address:
+          type: string
+        bank_country:
+          type: string
+        currency:
+          type: string
+        routing_code:
+          type: string
+        routing_code_type:
+          type: string
+        balance:
+          type: string
+
+    BalanceResponse:
+      type: object
+      properties:
+        UserId:
+          type: string
+          description: UserId UUID.
+        currency:
+          type: string
+          description: Three-letter ISO currency code.
+        TotalBalance:
+          type: string
+          description: The balance amount.
+        created_at:
+          type: string
+          format: date-time
+          description: Date/time the record was created.
+        wallet:
+          type: array
+          description: A list of wallets associated with this balance.
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/FundingAccountWallet'
+              - $ref: '#/components/schemas/TunWallet'
+            discriminator:
+              propertyName: type
+              mapping:
+                funding_account: '#/components/schemas/FundingAccountWallet'
+                tun_wallet: '#/components/schemas/TunWallet'

@@ -34,7 +34,8 @@ export function ThemeProvider({
   storageKey = "pesix-ui-theme",
   ...props
 }: ThemeProviderProps) {
-  const { user } = useAuth();
+  const authContext = useAuth();
+  const user = authContext?.user;
 
   // _theme is the internal React state for the desired theme (light, dark, or system)
   const [_theme, _setInternalTheme] = useState<ThemePreference>(() => {

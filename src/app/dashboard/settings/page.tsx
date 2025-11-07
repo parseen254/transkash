@@ -53,7 +53,7 @@ type BusinessInfoFormValues = z.infer<typeof businessInfoSchema>;
 const ProfileSettingsPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
-  const { user, loading: authLoading, initialLoadComplete } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { theme, setTheme, resolvedTheme } = useTheme();
   
   const [isFetchingData, setIsFetchingData] = useState(true);
@@ -88,7 +88,7 @@ const ProfileSettingsPage: NextPage = () => {
   });
 
   useEffect(() => {
-    if (user && initialLoadComplete) {
+    if (user && !authLoading) {
       const fetchUserData = async () => {
         setIsFetchingData(true);
         const userDocRef = doc(db, "users", user.uid);
@@ -126,16 +126,15 @@ const ProfileSettingsPage: NextPage = () => {
         setIsFetchingData(false);
       };
       fetchUserData();
-    } else if (!authLoading && initialLoadComplete && !user) {
+    } else if (!authLoading && !user) {
         router.push('/login');
         setIsFetchingData(false);
-    } else if (!authLoading && !initialLoadComplete && !user) {
-      // This condition might indicate the component is rendering before initialLoadComplete is true
+    } else if (authLoading && !user) {
       // and user is still null, but auth isn't "loading" in the sense of an active Firebase check.
       // Setting isFetchingData to false here ensures spinners stop if this state is reached.
       setIsFetchingData(false);
     }
-  }, [user, authLoading, initialLoadComplete, personalForm, businessForm, router]);
+  }, [user, authLoading, personalForm, businessForm, router]);
 
 
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,7 +164,7 @@ const ProfileSettingsPage: NextPage = () => {
       }
 
       const userDocRef = doc(db, "users", user.uid);
-      const profileDataToSave: Partial<UserProfile> = {
+      const profileDataToSave: any = {
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email,
@@ -181,7 +180,7 @@ const ProfileSettingsPage: NextPage = () => {
       if (currentAuthUser) {
         const authProfileUpdates: { displayName?: string; photoURL?: string | null } = {};
         if (currentAuthUser.displayName !== profileDataToSave.displayName) {
-            authProfileUpdates.displayName = profileDataToSave.displayName;
+            authProfileUpdates.displayName = profileDataToSave.displayName || undefined;
         }
         if (finalPhotoURL && currentAuthUser.photoURL !== finalPhotoURL) {
             authProfileUpdates.photoURL = finalPhotoURL;
@@ -236,7 +235,7 @@ const ProfileSettingsPage: NextPage = () => {
     
     try {
       const userDocRef = doc(db, "users", user.uid);
-      const businessDataToSave: Partial<UserProfile> = {
+      const businessDataToSave: any = {
         businessName: data.businessName || '',
         businessEmail: data.businessEmail || '',
         businessPhone: data.businessPhone || '',

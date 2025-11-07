@@ -17,17 +17,17 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading, initialLoadComplete } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
-    if (initialLoadComplete && !user) {
+    if (!loading && !user) {
       router.push('/login');
     }
-  }, [user, initialLoadComplete, router]);
+  }, [user, loading, router]);
 
-  if (loading || !initialLoadComplete) {
+  if (loading) {
     return (
       <div className="flex min-h-screen bg-background">
         <Skeleton className="hidden md:block w-64 h-screen fixed top-0 left-0" />

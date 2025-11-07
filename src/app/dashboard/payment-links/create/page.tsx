@@ -27,14 +27,17 @@ import { collection, addDoc, serverTimestamp, query, where, Timestamp, doc, setD
 import { useEffect, useState } from 'react';
 
 const paymentLinkSchema = z.object({
-  linkName: z.string().min(1, { message: 'Link name is required.' }),
-  reference: z.string().min(1, { message: 'Reference is required.' }),
+  linkName: z.string().min(1, { message: 'Link name is required.' }).max(100, { message: 'Link name must be less than 100 characters.' }),
+  reference: z.string().min(1, { message: 'Reference is required.' }).max(50, { message: 'Reference must be less than 50 characters.' }),
   amount: z.preprocess(
     (val) => parseFloat(String(val)),
-    z.number().positive({ message: 'Amount must be a positive number.' })
+    z.number()
+      .positive({ message: 'Amount must be a positive number.' })
+      .min(1, { message: 'Amount must be at least 1.' })
+      .max(10000000, { message: 'Amount must be less than 10,000,000.' })
   ).refine(val => /^\d+(\.\d{1,2})?$/.test(String(val)), { message: 'Amount must be a valid number with up to two decimal places.' }),
   currency: z.string().default('KES'),
-  purpose: z.string().min(1, { message: 'Purpose is required.' }),
+  purpose: z.string().min(1, { message: 'Purpose is required.' }).max(500, { message: 'Purpose must be less than 500 characters.' }),
   payoutAccountId: z.string().min(1, { message: 'Payout account is required.' }),
   hasExpiry: z.boolean().default(true),
   expiryDate: z.date().optional(),
@@ -45,6 +48,14 @@ const paymentLinkSchema = z.object({
   return true;
 }, {
   message: 'Expiry date is required when expiry is enabled.',
+  path: ['expiryDate'],
+}).refine(data => {
+  if (data.hasExpiry && data.expiryDate && data.expiryDate < new Date()) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Expiry date must be in the future.',
   path: ['expiryDate'],
 });
 
@@ -61,12 +72,12 @@ const CreatePaymentLinkPage: NextPage = () => {
     resolver: zodResolver(paymentLinkSchema),
     defaultValues: {
       linkName: '',
-      reference: '',
+      reference: `INV-${Date.now().toString().slice(-6)}`, // Auto-generate reference
       amount: 0,
       currency: 'KES',
       purpose: '',
       payoutAccountId: '',
-      hasExpiry: true, // Default expiry to true
+      hasExpiry: true,
       expiryDate: undefined,
     },
   });
@@ -151,14 +162,40 @@ const CreatePaymentLinkPage: NextPage = () => {
               <FormField control={form.control} name="payoutAccountId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Payout Account</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={loadingAccounts}>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={loadingAccounts || payoutAccounts.length === 0}>
                       <FormControl>
-                        <SelectTrigger>{loadingAccounts ? "Loading accounts..." : <SelectValue placeholder="Select a payout account" />}</SelectTrigger>
+                        <SelectTrigger>
+                          {loadingAccounts ? (
+                            "Loading accounts..."
+                          ) : payoutAccounts.length === 0 ? (
+                            "No active payout accounts"
+                          ) : (
+                            <SelectValue placeholder="Select a payout account" />
+                          )}
+                        </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {payoutAccounts.map(acc => ( <SelectItem key={acc.id} value={acc.id}>{acc.accountName} ({acc.type === 'bank' && acc.bankName ? acc.bankName : acc.accountNumber})</SelectItem> ))}
+                        {payoutAccounts.length === 0 ? (
+                          <div className="p-2 text-sm text-muted-foreground text-center">
+                            No payout accounts found. Please create one first.
+                          </div>
+                        ) : (
+                          payoutAccounts.map(acc => (
+                            <SelectItem key={acc.id} value={acc.id}>
+                              {acc.accountName} ({acc.type === 'bank' && acc.bankName ? acc.bankName : acc.accountNumber})
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
+                    {payoutAccounts.length === 0 && !loadingAccounts && (
+                      <p className="text-sm text-amber-600 dark:text-amber-500 mt-1">
+                        You need to create a payout account before generating payment links.{' '}
+                        <Link href="/dashboard/payouts/add-bank" className="underline font-medium">
+                          Create one now
+                        </Link>
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -193,7 +230,7 @@ const CreatePaymentLinkPage: NextPage = () => {
                 />
               )}
               <div className="flex justify-end">
-                <Button type="submit" disabled={form.formState.isSubmitting || loadingAccounts}>
+                <Button type="submit" disabled={form.formState.isSubmitting || loadingAccounts || payoutAccounts.length === 0}>
                   {form.formState.isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</> : 'Generate Link'}
                 </Button>
               </div>

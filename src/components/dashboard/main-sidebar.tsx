@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from 'next/link';
@@ -35,12 +34,12 @@ interface MainSidebarProps {
 export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, loading, signOutUser } = useAuth();
   const { toast } = useToast();
 
   const handleLogout = async () => {
     try {
-      logout();
+      await signOutUser();
       toast({
         title: 'Logged Out',
         description: 'You have been successfully logged out.',
@@ -68,7 +67,7 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
     }
   };
 
-  const displayName = user ? `${user.firstName} ${user.lastName}`.trim() : "User Name";
+  const displayName = user ? `${user.displayName}`.trim() : "User Name";
 
   return (
     <>
@@ -85,8 +84,8 @@ export function MainSidebar({ onLinkClick, className }: MainSidebarProps) {
           <div className="flex items-center gap-3 overflow-hidden">
               <Avatar className="h-10 w-10">
               {/* The API doesn't provide a photoURL for the user, so we use a placeholder */}
-              <AvatarImage src="https://placehold.co/100x100.png" alt={displayName} data-ai-hint="user avatar" />
-              <AvatarFallback>{user ? getInitials(user.firstName, user.lastName) : 'U'}</AvatarFallback>
+              <AvatarImage src={user?.photoURL} alt={displayName} data-ai-hint="user avatar" />
+              <AvatarFallback>{user ? getInitials(user.displayName?.split(' ')[0], user.displayName?.split(' ')[-1]) : 'U'}</AvatarFallback>
               </Avatar>
               <div className="overflow-hidden">
               {loading ? (

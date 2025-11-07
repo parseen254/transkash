@@ -48,7 +48,7 @@ const PayoutAccountItem: React.FC<{ account: PayoutAccount; onEdit: (id: string,
 
 const PayoutAccountsPage: NextPage = () => {
   const router = useRouter();
-  const { user, loading: authLoading, initialLoadComplete } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   
   const [allPayoutAccounts, setAllPayoutAccounts] = useState<PayoutAccount[]>([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -58,7 +58,7 @@ const PayoutAccountsPage: NextPage = () => {
   const [currentPageMpesa, setCurrentPageMpesa] = useState(1);
 
   useEffect(() => {
-    if (!initialLoadComplete) return; 
+    if (authLoading) return; 
 
     if (!user) {
       router.push('/login');
@@ -84,7 +84,7 @@ const PayoutAccountsPage: NextPage = () => {
     });
 
     return () => unsubscribe();
-  }, [user, initialLoadComplete, router]);
+  }, [user, router]);
 
   const handleEdit = (id: string, type: 'bank' | 'mpesa') => {
     if (type === 'bank') {
@@ -138,7 +138,7 @@ const PayoutAccountsPage: NextPage = () => {
     </div>
   );
 
-  if (authLoading || (!initialLoadComplete && !user)) { 
+  if (authLoading || (authLoading || !user)) { 
     return (
         <div className="flex justify-center items-center h-full p-8">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />

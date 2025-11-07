@@ -7,23 +7,19 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
 import { AppLogo } from '@/components/shared/app-logo';
 import { HelpCircle } from 'lucide-react';
+import { useAuth } from '@/contexts/auth-context';
 
 const signUpSchema = z.object({
-  firstName: z.string().min(1, { message: 'First name is required.' }),
-  lastName: z.string().min(1, { message: 'Last name is required.' }),
+  displayName: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
   email: z.string().email({ message: 'Invalid email address.' }),
   password: z.string().min(8, { message: 'Password must be at least 8 characters.' }),
   confirmPassword: z.string(),
-  gender: z.enum(['M', 'F']),
-  legalEntityType: z.enum(['I', 'B']),
 }).refine(data => data.password === data.confirmPassword, {
   message: "Passwords don't match.",
   path: ['confirmPassword'],
@@ -34,45 +30,41 @@ type SignUpFormValues = z.infer<typeof signUpSchema>;
 const SignUpPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
+  const { signUp } = useAuth();
 
   const form = useForm<SignUpFormValues>({
     resolver: zodResolver(signUpSchema),
     defaultValues: {
-      firstName: '',
-      lastName: '',
+      displayName: '',
       email: '',
       password: '',
       confirmPassword: '',
-      gender: 'M',
-      legalEntityType: 'I',
     },
   });
 
   const onSubmit = async (data: SignUpFormValues) => {
     try {
-      // The API doesn't seem to have a password field for user creation, which is a major security issue.
-      // We will proceed as per the spec, but this needs to be addressed in a real application.
-      const response = await api.post('/users', {
-        email: data.email,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        gender: data.gender,
-        legalEntityType: data.legalEntityType,
+      await signUp(data.email, data.password, data.displayName);
+      
+      toast({
+        title: "Account Created!",
+        description: "Please check your email to verify your account before logging in.",
+        duration: 7000,
       });
-
-      if (response.status === 200 || response.status === 201) {
-        toast({
-          title: "Account Created!",
-          description: "Your account has been successfully created. You can now log in.",
-          duration: 7000,
-        });
-        router.push('/login');
-      } else {
-        throw new Error(response.data.message || 'Failed to create account.');
-      }
+      router.push('/please-verify-email');
     } catch (error: any) {
       console.error('Sign up error:', error);
-      const errorMessage = error.response?.data?.message || "An error occurred during sign up.";
+      
+      let errorMessage = "An error occurred during sign up.";
+      
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "This email is already registered.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email address.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "Password is too weak.";
+      }
+      
       toast({
         title: "Sign Up Failed",
         description: errorMessage,
@@ -98,16 +90,10 @@ const SignUpPage: NextPage = () => {
           
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField control={form.control} name="firstName" render={({ field }) => ( <FormItem><FormControl><Input placeholder="First Name" {...field} className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" /></FormControl><FormMessage /></FormItem> )} />
-              <FormField control={form.control} name="lastName" render={({ field }) => ( <FormItem><FormControl><Input placeholder="Last Name" {...field} className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" /></FormControl><FormMessage /></FormItem> )} />
+              <FormField control={form.control} name="displayName" render={({ field }) => ( <FormItem><FormControl><Input placeholder="Full Name" {...field} className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" /></FormControl><FormMessage /></FormItem> )} />
               <FormField control={form.control} name="email" render={({ field }) => ( <FormItem><FormControl><Input type="email" placeholder="Email" {...field} className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" /></FormControl><FormMessage /></FormItem> )} />
               <FormField control={form.control} name="password" render={({ field }) => ( <FormItem><FormControl><Input type="password" placeholder="Password" {...field} className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" /></FormControl><FormMessage /></FormItem> )} />
               <FormField control={form.control} name="confirmPassword" render={({ field }) => ( <FormItem><FormControl><Input type="password" placeholder="Confirm Password" {...field} className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" /></FormControl><FormMessage /></FormItem> )} />
-              
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="gender" render={({ field }) => ( <FormItem> <FormLabel>Gender</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger></FormControl><SelectContent><SelectItem value="M">Male</SelectItem><SelectItem value="F">Female</SelectItem></SelectContent></Select><FormMessage /></FormItem> )}/>
-                <FormField control={form.control} name="legalEntityType" render={({ field }) => ( <FormItem> <FormLabel>Entity</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select entity" /></SelectTrigger></FormControl><SelectContent><SelectItem value="I">Individual</SelectItem><SelectItem value="B">Business</SelectItem></SelectContent></Select><FormMessage /></FormItem> )}/>
-              </div>
 
               <Button type="submit" className="w-full h-12 rounded-lg text-base" disabled={form.formState.isSubmitting} variant="default">
                 {form.formState.isSubmitting ? 'Signing up...' : 'Sign up'}

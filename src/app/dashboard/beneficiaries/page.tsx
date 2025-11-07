@@ -15,12 +15,13 @@ import { useAuth } from '@/contexts/auth-context';
 import type { Beneficiary } from '@/lib/types';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { api } from '@/lib/api';
+import { db } from '@/lib/firebase';
+import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 
 const ITEMS_PER_PAGE = 10;
 
 const BeneficiariesPage: NextPage = () => {
-  const { user, loading: authLoading, initialLoadComplete } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [allBeneficiaries, setAllBeneficiaries] = useState<Beneficiary[]>([]);
@@ -29,61 +30,69 @@ const BeneficiariesPage: NextPage = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!initialLoadComplete) return;
+    if (authLoading) return;
 
     if (!user) {
       router.push('/login');
       return;
     }
-    setLoadingData(true);
     
-    const fetchBeneficiaries = async () => {
-      try {
-        // The API requires many parameters, some of which we don't have a UI for yet.
-        // We will use some defaults for now. This should be improved.
-        const response = await api.get('/beneficiaries', {
-          params: {
-            SearchingText: searchTerm || user.userId, // Using userId as a fallback search text
-            UserId: user.userId,
-            serviceCode: 'MONEYTRANSFER',
-            collectionMode: 'BANKACCOUNT',
-            legalEntityType: 'I',
-            countryIso3: 'USA',
-            currencyIso: 'USD',
-            PageNo: currentPage,
-            PageSize: ITEMS_PER_PAGE,
-          }
-        });
+    // Fetch beneficiaries from Firestore
+    const beneficiariesRef = collection(db, 'beneficiaries');
+    const q = query(
+      beneficiariesRef, 
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
 
-        if (response.data.data) {
-          const fetchedBeneficiaries = response.data.data.map((item: any) => ({
-            id: item.beneficiaryId, // mapping from beneficiaryId
-            ...item
-          }));
-          setAllBeneficiaries(fetchedBeneficiaries);
-        } else {
-          setAllBeneficiaries([]);
-        }
-      } catch (error) {
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const beneficiaries = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Beneficiary[];
+        setAllBeneficiaries(beneficiaries);
+        setLoadingData(false);
+      },
+      (error) => {
         console.error("Error fetching beneficiaries:", error);
         toast({ title: "Error", description: "Could not fetch beneficiaries.", variant: "destructive" });
-      } finally {
         setLoadingData(false);
       }
-    }
+    );
 
-    fetchBeneficiaries();
+    return () => unsubscribe();
+  }, [user, authLoading, router, toast]);
 
-  }, [user, initialLoadComplete, router, toast, currentPage, searchTerm]);
+  // Filter beneficiaries based on search term
+  const filteredBeneficiaries = useMemo(() => {
+    if (!searchTerm) return allBeneficiaries;
+    
+    const lowerSearch = searchTerm.toLowerCase();
+    return allBeneficiaries.filter(b => 
+      b.firstName?.toLowerCase().includes(lowerSearch) ||
+      b.lastName?.toLowerCase().includes(lowerSearch) ||
+      b.beneficiaryNickname?.toLowerCase().includes(lowerSearch) ||
+      b.beneficiaryEmailAddress?.toLowerCase().includes(lowerSearch)
+    );
+  }, [allBeneficiaries, searchTerm]);
 
-  // Since API handles pagination and search, we just display what we get.
-  const paginatedBeneficiaries = allBeneficiaries;
-  const totalPages = 1; // The API response should ideally give us total pages.
+  // Client-side pagination
+  const totalPages = Math.ceil(filteredBeneficiaries.length / ITEMS_PER_PAGE);
+  const paginatedBeneficiaries = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredBeneficiaries.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredBeneficiaries, currentPage]);
 
-  const handleNextPage = () => setCurrentPage((prev) => prev + 1);
+  const handleNextPage = () => setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   const handlePreviousPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
   
-  if (authLoading || (!user && !initialLoadComplete)) { 
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+  
+  if (authLoading || !user) { 
      return (
         <div className="flex justify-center items-center h-full p-8">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -109,10 +118,7 @@ const BeneficiariesPage: NextPage = () => {
           placeholder="Search beneficiaries..."
           className="w-full bg-secondary border-border rounded-lg h-12 pl-10 pr-4 text-base focus-visible:ring-primary"
           value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setCurrentPage(1); // Reset to first page on new search
-          }}
+          onChange={(e) => setSearchTerm(e.target.value)}
         />
       </div>
 

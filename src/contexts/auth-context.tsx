@@ -2,95 +2,118 @@
 "use client";
 
 import type React from 'react';
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { FurpUser } from '@/lib/types';
-import { api } from '@/lib/api';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  type User as FirebaseUser
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 
-interface AuthContextType {
-  user: FurpUser | null;
-  token: string | null;
-  loading: boolean;
-  initialLoadComplete: boolean;
-  login: (token: string, userData: FurpUser) => void;
-  logout: () => void;
+interface AppUser {
+  uid: string;
+  email: string;
+  displayName?: string;
+  photoURL?: string;
+  emailVerified: boolean;
+  createdAt: string;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  token: null,
-  loading: true,
-  initialLoadComplete: false,
-  login: () => {},
-  logout: () => {},
-});
+interface AuthContextType {
+  user: AppUser | null;
+  firebaseUser: FirebaseUser | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, displayName?: string) => Promise<void>;
+  signOutUser: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  sendVerificationEmail: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<FurpUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   useEffect(() => {
-    const initializeAuth = async () => {
-      setLoading(true);
-      const storedToken = localStorage.getItem('authToken');
-      if (storedToken) {
-        try {
-          // You might want to verify the token with the backend here
-          // For this prototype, we'll assume if it exists, it's valid
-          // and we'll fetch user data. A real app would need a /users/me endpoint.
-          // Since there is no /me, we'll decode it (INSECURE, FOR DEMO ONLY)
-          const decodedToken: any = JSON.parse(atob(storedToken.split('.')[1]));
-          
-          // The API spec doesn't have a /users/me, so we can't reliably get the current user.
-          // This is a significant limitation of the API for a real app.
-          // As a workaround for the prototype, we'll store user data in local storage too.
-          const storedUser = localStorage.getItem('authUser');
-          if (storedUser) {
-            const userData: FurpUser = JSON.parse(storedUser);
-            setUser(userData);
-            setToken(storedToken);
-            api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-          } else {
-            // Token exists but no user, clear state
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('authUser');
-          }
-        } catch (error) {
-          console.error("Failed to initialize auth state:", error);
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('authUser');
-          setUser(null);
-          setToken(null);
-          delete api.defaults.headers.common['Authorization'];
-        }
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Load user profile from Firestore
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        const userDoc = await getDoc(userDocRef);
+        
+        const appUser: AppUser = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email!,
+          displayName: firebaseUser.displayName || userDoc.data()?.displayName,
+          photoURL: firebaseUser.photoURL || userDoc.data()?.photoURL,
+          emailVerified: firebaseUser.emailVerified,
+          createdAt: userDoc.data()?.createdAt || new Date().toISOString(),
+        };
+        
+        setUser(appUser);
+        setFirebaseUser(firebaseUser);
+      } else {
+        setUser(null);
+        setFirebaseUser(null);
       }
       setLoading(false);
-      setInitialLoadComplete(true);
-    };
+    });
 
-    initializeAuth();
+    return () => unsubscribe();
   }, []);
 
-  const login = useCallback((newToken: string, userData: FurpUser) => {
-    localStorage.setItem('authToken', newToken);
-    localStorage.setItem('authUser', JSON.stringify(userData));
-    setToken(newToken);
-    setUser(userData);
-    api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
-  }, []);
+  const signIn = async (email: string, password: string) => {
+    await signInWithEmailAndPassword(auth, email, password);
+  };
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('authUser');
-    setToken(null);
-    setUser(null);
-    delete api.defaults.headers.common['Authorization'];
-    // Here you might want to call a /auth/logout endpoint if it existed
-  }, []);
+  const signUp = async (email: string, password: string, displayName?: string) => {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    
+    // Create user profile in Firestore
+    await setDoc(doc(db, 'users', userCredential.user.uid), {
+      email,
+      displayName: displayName || email.split('@')[0],
+      createdAt: new Date().toISOString(),
+      emailVerified: false,
+    });
+
+    // Send email verification
+    await sendEmailVerification(userCredential.user);
+  };
+
+  const signOutUser = async () => {
+    await signOut(auth);
+  };
+
+  const resetPassword = async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
+  };
+
+  const sendVerificationEmail = async () => {
+    if (firebaseUser) {
+      await sendEmailVerification(firebaseUser);
+    }
+  };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, initialLoadComplete, login, logout }}>
+    <AuthContext.Provider value={{
+      user,
+      firebaseUser,
+      loading,
+      signIn,
+      signUp,
+      signOutUser,
+      resetPassword,
+      sendVerificationEmail,
+    }}>
       {children}
     </AuthContext.Provider>
   );

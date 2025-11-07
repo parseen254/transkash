@@ -15,8 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import { seedFirestoreData } from "@/lib/seed"; // Assuming seedFirestoreData is exported
-import { Spinner } from "../ui/spinner"; // Assuming you have a Spinner component
+import { Spinner } from "../ui/spinner";
 
 interface SeedDataDialogProps {
   open: boolean;
@@ -53,11 +52,30 @@ export function SeedDataDialog({ open, onOpenChange }: SeedDataDialogProps) {
       };
 
       setProgressMessage("Clearing existing data...");
-      // clearExistingData is now called within seedFirestoreData
-      // await clearExistingData(user.uid); 
 
       setProgressMessage("Seeding new data... This may take a moment.");
-      await seedFirestoreData(user.uid, counts); // No callback passed
+      
+      // Call API route instead of server action
+      const response = await fetch('/api/seed-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.uid,
+          paymentLinks: counts.paymentLinks,
+          mpesaPayoutAccounts: counts.mpesaPayoutAccounts,
+          bankPayoutAccounts: counts.bankPayoutAccounts,
+          transactionsPerLink: counts.transactionsPerLink,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to seed data');
+      }
+
+      const result = await response.json();
 
       toast({ title: "Success", description: "Dummy data seeded successfully!" });
       setProgressMessage("Seeding complete!");

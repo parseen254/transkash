@@ -30,15 +30,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased font-sans`}>
-        <ThemeProvider defaultTheme="system" storageKey="pesix-ui-theme">
-          <AuthProvider>
+        <AuthProvider>
+          <ThemeProvider defaultTheme="system" storageKey="pesix-ui-theme">
             <div className="flex flex-col min-h-screen">
               <main className="flex-grow">{children}</main>
               <SiteFooter /> {/* Add SiteFooter here */}
             </div>
             <Toaster />
-          </AuthProvider>
-        </ThemeProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   );

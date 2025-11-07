@@ -21,32 +21,43 @@ const PaymentSuccessfulContent: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Get the reference from URL (sent by MITO redirect or processing page)
+    const ref = searchParams.get('ref');
     const paymentLinkId = searchParams.get('paymentLinkId');
-    if (paymentLinkId) {
+    
+    if (ref || paymentLinkId) {
       setLoading(true);
       setError(null);
 
-      const fetchLinkDetails = async () => {
+      const fetchDetails = async () => {
         try {
-          const linkDocRef = doc(db, 'paymentLinks', paymentLinkId);
-          const docSnap = await getDoc(linkDocRef);
+          // If we have a reference, we can look up the transaction
+          // For now, just load the payment link if provided
+          if (paymentLinkId) {
+            const linkDocRef = doc(db, 'paymentLinks', paymentLinkId);
+            const docSnap = await getDoc(linkDocRef);
 
-          if (docSnap.exists()) {
-            const linkData = { id: docSnap.id, ...docSnap.data() } as PaymentLink;
-            setPaymentLink(linkData);
-          } else {
-            setError("Payment link details not found for this transaction.");
+            if (docSnap.exists()) {
+              const linkData = { id: docSnap.id, ...docSnap.data() } as PaymentLink;
+              setPaymentLink(linkData);
+            } else {
+              setError("Payment link details not found for this transaction.");
+            }
+          } else if (ref) {
+            // If only reference provided, show success message without payment link details
+            // The webhook should have updated the transaction status already
+            console.log('Payment successful, reference:', ref);
           }
         } catch (err) {
-          console.error("Error fetching payment link for success page:", err);
+          console.error("Error fetching payment details:", err);
           setError("An error occurred while fetching payment details.");
         } finally {
           setLoading(false);
         }
       };
-      fetchLinkDetails();
+      fetchDetails();
     } else {
-      setError("Payment link ID not provided.");
+      setError("Payment reference not provided.");
       setLoading(false);
     }
   }, [searchParams]);

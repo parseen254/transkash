@@ -1,6 +1,3 @@
-
-'use server';
-
 import { faker } from '@faker-js/faker';
 import { db } from './firebase';
 import { collection, writeBatch, getDocs, query, where, doc, Timestamp, serverTimestamp } from 'firebase/firestore';

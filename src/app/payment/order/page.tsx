@@ -4,34 +4,20 @@
 import type { NextPage } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense, useCallback } from 'react';
-import { HelpCircle, Smartphone, CreditCard, Receipt, AlertCircle } from 'lucide-react';
+import { HelpCircle, CreditCard, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLogo } from '@/components/shared/app-logo';
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Spinner } from '@/components/ui/spinner';
 import type { PaymentLink } from '@/lib/types';
-import { format, isFuture, isValid } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
 
-interface PaymentOption {
-  value: string;
-  name: string;
-  description: string;
-  icon: React.ElementType;
-}
-
-const paymentOptions: PaymentOption[] = [
-  { value: 'mpesa_stk', name: 'M-Pesa (STK Push)', description: 'Pay with M-Pesa STK Push', icon: Smartphone },
-  { value: 'mpesa_paybill', name: 'M-Pesa (Paybill)', description: 'Pay using M-Pesa Paybill', icon: Receipt },
-  { value: 'card', name: 'Card Transfer', description: 'Pay with Card Transfer', icon: CreditCard },
-];
-
-const MOCK_PAYBILL_NUMBER = "888888";
+// Payment is now handled via MITO's hosted payment page
+// Customer will select payment method on MITO's secure page
 
 const PaymentForOrderContent: React.FC = () => {
   const router = useRouter();
@@ -42,13 +28,11 @@ const PaymentForOrderContent: React.FC = () => {
   const [loadingLink, setLoadingLink] = useState(true);
   const [errorLoadingLink, setErrorLoadingLink] = useState<string | null>(null);
 
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | undefined>(undefined);
-  const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
-
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpiry, setCardExpiry] = useState(''); 
-  const [cvv, setCvv] = useState('');
+  const [useTestMode, setUseTestMode] = useState(false); // Test mode for UAT
 
   useEffect(() => {
     const paymentLinkId = searchParams.get('paymentLinkId');
@@ -93,87 +77,69 @@ const PaymentForOrderContent: React.FC = () => {
     }
   }, [searchParams]);
 
-  const isCardFormValid = useCallback(() => {
-    const expiryPattern = /^(0[1-9]|1[0-2])\/\d{2}$/; 
-    if (!expiryPattern.test(cardExpiry)) return false;
-    
-    const [monthStr, yearStr] = cardExpiry.split('/');
-    const parsedFullYear = parseInt(`20${yearStr}`, 10);
-    const parsedMonth = parseInt(monthStr, 10);
-
-    if (isNaN(parsedMonth) || isNaN(parsedFullYear) || parsedMonth < 1 || parsedMonth > 12) return false;
-
-    const expiryDateObject = new Date(parsedFullYear, parsedMonth -1); 
-    const lastDayOfExpiryMonth = new Date(expiryDateObject.getFullYear(), expiryDateObject.getMonth() + 1, 0);
-
-    return (
-      cardNumber.replace(/\s/g, '').length >= 13 && cardNumber.replace(/\s/g, '').length <=19 &&
-      cvv.length >= 3 && cvv.length <= 4 &&
-      isValid(lastDayOfExpiryMonth) && 
-      isFuture(lastDayOfExpiryMonth)
-    );
-  }, [cardNumber, cardExpiry, cvv]);
-
   const handlePayment = async () => {
-    if (!selectedPaymentMethod || !currentPaymentLink) {
-      toast({ title: "Error", description: "Payment details or method missing.", variant: "destructive" });
+    if (!currentPaymentLink) {
+      toast({ title: "Error", description: "Payment details missing.", variant: "destructive" });
       return;
     }
 
-    if (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?([17]\d{8})$/)) {
-      toast({ title: "Invalid Phone Number", description: "Please enter a valid M-Pesa phone number (e.g., 07XXXXXXXX).", variant: "destructive" });
+    // Validate customer information
+    if (!customerName.trim()) {
+      toast({ title: "Error", description: "Please enter your name.", variant: "destructive" });
       return;
     }
 
-    if (selectedPaymentMethod === 'card' && !isCardFormValid()) {
-      toast({ title: "Invalid Card Details", description: "Please check your card information and try again.", variant: "destructive" });
+    if (!customerEmail.trim() || !customerEmail.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+      toast({ title: "Error", description: "Please enter a valid email address.", variant: "destructive" });
       return;
     }
 
     setIsSubmittingPayment(true);
-    toast({ title: "Initiating Payment", description: "Please wait..." });
+    toast({ title: "Initiating Payment", description: "Please wait while we set up your payment..." });
 
-    const queryParams = new URLSearchParams({
-      paymentLinkId: currentPaymentLink.id,
-      creatorUserId: currentPaymentLink.creatorUserId || "UNKNOWN_CREATOR", 
-      method: selectedPaymentMethod,
-      amount: String(currentPaymentLink.amount),
-      currency: currentPaymentLink.currency || 'KES',
-      reference: currentPaymentLink.reference,
-    });
+    try {
+      // Call our API to initiate payment (test or real)
+      const apiEndpoint = useTestMode ? '/api/test-payment' : '/api/mito/initiate-payment';
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          paymentLinkId: currentPaymentLink.id,
+          customerName: customerName.trim(),
+          customerEmail: customerEmail.trim(),
+          customerPhone: customerPhone.trim(),
+          ...(useTestMode && { simulate: 'success' }), // Test mode simulation
+        }),
+      });
 
-    if (selectedPaymentMethod === 'mpesa_stk') {
-      queryParams.append('mpesaPhoneNumber', mpesaPhoneNumber); 
-      const redactedPhone = `${mpesaPhoneNumber.substring(0, mpesaPhoneNumber.length > 7 ? 3 : 2)}****${mpesaPhoneNumber.substring(mpesaPhoneNumber.length - 2)}`;
-      queryParams.append('mpesaPhoneNumberDisplay', redactedPhone); 
-    } else if (selectedPaymentMethod === 'card') {
-      queryParams.append('cardNumber', cardNumber.replace(/\s/g, '')); 
-      const displayCardNum = `**** **** **** ${cardNumber.replace(/\s/g, '').slice(-4)}`;
-      queryParams.append('displayCardNumber', displayCardNum);
-      // Note: CVV and Expiry are NOT passed in query params for security.
-      // The processing page will simulate having them for the mock APIs.
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to initiate payment');
+      }
+
+      // Redirect to MITO's hosted payment page
+      toast({ 
+        title: "Redirecting to Payment", 
+        description: "You will be redirected to complete your payment securely.",
+      });
+
+      // Small delay to show the toast, then redirect
+      setTimeout(() => {
+        window.location.href = data.paymentUrl;
+      }, 1000);
+
+    } catch (error: any) {
+      console.error("Error initiating payment:", error);
+      toast({
+        title: "Payment Initiation Failed",
+        description: error.message || "An error occurred. Please try again.",
+        variant: "destructive",
+      });
+      setIsSubmittingPayment(false);
     }
-
-    router.push(`/payment/processing?${queryParams.toString()}`);
-  };
-
-  const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, '');
-    if (value.length > 4) value = value.slice(0, 4);
-
-    if (value.length > 2) {
-      value = `${value.slice(0, 2)}/${value.slice(2)}`;
-    } else if (value.length === 2 && cardExpiry.length === 1 && !cardExpiry.includes('/')) {
-      value = `${value}/`;
-    }
-    setCardExpiry(value);
-  };
-
-  const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value.replace(/\s/g, '');
-    if (rawValue.length > 19) return;
-    const formattedValue = rawValue.replace(/(\d{4})/g, '$1 ').trim();
-    setCardNumber(formattedValue);
   };
 
 
@@ -197,21 +163,8 @@ const PaymentForOrderContent: React.FC = () => {
     );
   }
 
-  const pageTitle = selectedPaymentMethod ? "Complete Payment" : "Payment for your order";
-  let payButtonText = `Pay ${currentPaymentLink.currency} ${currentPaymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  let PayButtonIcon = CreditCard;
-
-  if (selectedPaymentMethod === 'mpesa_stk') {
-    payButtonText = `Pay with M-Pesa (STK Push)`;
-    PayButtonIcon = Smartphone;
-  } else if (selectedPaymentMethod === 'mpesa_paybill') {
-    payButtonText = "I've sent the money";
-    PayButtonIcon = Receipt;
-  } else if (selectedPaymentMethod === 'card') {
-    payButtonText = `Pay ${currentPaymentLink.currency} ${currentPaymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    PayButtonIcon = CreditCard;
-  }
-
+  const pageTitle = "Payment for your order";
+  const payButtonText = `Pay ${currentPaymentLink.currency} ${currentPaymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <div className="w-full max-w-md space-y-6">
@@ -248,93 +201,76 @@ const PaymentForOrderContent: React.FC = () => {
         )}
       </div>
 
-      {!selectedPaymentMethod && (
-         <RadioGroup value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod} className="space-y-3" aria-label="Payment method">
-            {paymentOptions.map((option) => (
-            <Label key={option.value} htmlFor={option.value}
-                className={cn(`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors
-                ${selectedPaymentMethod === option.value ? 'border-primary ring-2 ring-primary bg-primary/5' : 'border-border hover:bg-secondary/50'}`)}>
-                <RadioGroupItem value={option.value} id={option.value} className="shrink-0" />
-                <div className="flex-grow flex items-center space-x-3">
-                <option.icon className={cn(`h-6 w-6 ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-muted-foreground'}`)} />
-                <div>
-                    <p className={cn(`font-medium ${selectedPaymentMethod === option.value ? 'text-primary' : 'text-foreground'}`)}>{option.name}</p>
-                    <p className={cn(`text-xs ${selectedPaymentMethod === option.value ? 'text-primary/80' : 'text-muted-foreground'}`)}>{option.description}</p>
-                </div>
-                </div>
-            </Label>
-            ))}
-        </RadioGroup>
-      )}
-
-      {selectedPaymentMethod === 'mpesa_stk' && (
-        <div className="space-y-4">
-            <p className="text-base font-medium text-foreground">M-Pesa STK Push Details</p>
-            <div>
-                <Label htmlFor="mpesaPhoneNumber" className="text-sm font-medium text-muted-foreground">Phone Number</Label>
-                <Input id="mpesaPhoneNumber" type="tel" placeholder="Enter phone number (e.g., 0712345678)" value={mpesaPhoneNumber}
-                    onChange={(e) => setMpesaPhoneNumber(e.target.value)}
-                    className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
-            </div>
+      <div className="space-y-4">
+        <p className="text-base font-medium text-foreground">Your Information</p>
+        <div>
+          <Label htmlFor="customerName" className="text-sm font-medium text-muted-foreground">Full Name *</Label>
+          <Input 
+            id="customerName" 
+            type="text" 
+            placeholder="Enter your full name" 
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" 
+            disabled={isSubmittingPayment}
+          />
         </div>
-      )}
-
-      {selectedPaymentMethod === 'mpesa_paybill' && (
-        <div className="space-y-4">
-            <p className="text-base font-medium text-foreground">M-Pesa Paybill Instructions</p>
-            <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground bg-secondary/50 p-4 rounded-md">
-                <li>Go to your M-Pesa Menu</li>
-                <li>Select Lipa na M-Pesa, then Pay Bill</li>
-                <li>Enter Business Number: <strong className="text-foreground">{MOCK_PAYBILL_NUMBER}</strong></li>
-                <li>Enter Account Number: <strong className="text-foreground">{currentPaymentLink.reference}</strong></li>
-                <li>Enter Amount: <strong className="text-foreground">{currentPaymentLink.currency} {currentPaymentLink.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></li>
-                <li>Enter your M-Pesa PIN and confirm</li>
-            </ul>
+        <div>
+          <Label htmlFor="customerEmail" className="text-sm font-medium text-muted-foreground">Email Address *</Label>
+          <Input 
+            id="customerEmail" 
+            type="email" 
+            placeholder="your.email@example.com" 
+            value={customerEmail}
+            onChange={(e) => setCustomerEmail(e.target.value)}
+            className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" 
+            disabled={isSubmittingPayment}
+          />
         </div>
-      )}
-
-      {selectedPaymentMethod === 'card' && (
-        <div className="space-y-4">
-           <p className="text-base font-medium text-foreground">Card Details</p>
-           <div>
-                <Label htmlFor="cardNumber" className="text-sm font-medium text-muted-foreground">Card Number</Label>
-                <Input id="cardNumber" type="text" placeholder="0000 0000 0000 0000" value={cardNumber}
-                    onChange={handleCardNumberChange} maxLength={23} 
-                    autoComplete="cc-number"
-                    className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
-           </div>
-           <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <Label htmlFor="cardExpiry" className="text-sm font-medium text-muted-foreground">Expiry Date (MM/YY)</Label>
-                    <Input id="cardExpiry" type="text" placeholder="MM/YY" value={cardExpiry}
-                        onChange={handleExpiryChange} maxLength={5}
-                        autoComplete="cc-exp"
-                        className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
-                </div>
-                <div>
-                    <Label htmlFor="cvv" className="text-sm font-medium text-muted-foreground">CVV</Label>
-                    <Input id="cvv" type="text" placeholder="123" value={cvv}
-                        onChange={(e) => setCvv(e.target.value.replace(/\D/g, ''))} maxLength={4}
-                        autoComplete="cc-csc"
-                        className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" />
-                </div>
-           </div>
+        <div>
+          <Label htmlFor="customerPhone" className="text-sm font-medium text-muted-foreground">Phone Number (Optional)</Label>
+          <Input 
+            id="customerPhone" 
+            type="tel" 
+            placeholder="e.g., 0712345678" 
+            value={customerPhone}
+            onChange={(e) => setCustomerPhone(e.target.value)}
+            className="mt-1 bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base" 
+            disabled={isSubmittingPayment}
+          />
         </div>
-      )}
+        
+        {/* Test Mode Toggle for UAT */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="flex items-center space-x-2 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <input
+              type="checkbox"
+              id="testMode"
+              checked={useTestMode}
+              onChange={(e) => setUseTestMode(e.target.checked)}
+              className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+            />
+            <label htmlFor="testMode" className="text-sm text-amber-900 dark:text-amber-100 cursor-pointer">
+              <span className="font-semibold">Test Mode</span> - Skip MITO, simulate payment instantly
+            </label>
+          </div>
+        )}
+        
+        <p className="text-xs text-muted-foreground">
+          {useTestMode 
+            ? 'Test mode enabled: Payment will be simulated without connecting to payment provider.' 
+            : 'You will be redirected to a secure payment page to complete your payment using M-Pesa, card, or other available methods.'}
+        </p>
+      </div>
 
-      {selectedPaymentMethod && (
-        <>
-            <Button onClick={handlePayment} className="w-full h-12 text-base rounded-lg"
-                    disabled={isSubmittingPayment || (selectedPaymentMethod === 'mpesa_stk' && !mpesaPhoneNumber.match(/^(?:\+?254|0)?([17]\d{8})$/)) || (selectedPaymentMethod === 'card' && !isCardFormValid())}>
-                {isSubmittingPayment ? <Spinner className="mr-2" /> : <PayButtonIcon className="mr-2 h-5 w-5" />}
-                {isSubmittingPayment ? 'Processing...' : payButtonText}
-            </Button>
-            <Button variant="link" onClick={() => setSelectedPaymentMethod(undefined)}
-                className="w-full text-muted-foreground hover:text-primary" disabled={isSubmittingPayment}>
-                Change payment method
-            </Button>
-        </>
-       )}
+      <Button 
+        onClick={handlePayment} 
+        className="w-full h-12 text-base rounded-lg"
+        disabled={isSubmittingPayment || !customerName.trim() || !customerEmail.trim()}
+      >
+        {isSubmittingPayment ? <Spinner className="mr-2" /> : <CreditCard className="mr-2 h-5 w-5" />}
+        {isSubmittingPayment ? 'Processing...' : payButtonText}
+      </Button>
     </div>
   );
 };

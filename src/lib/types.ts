@@ -62,12 +62,20 @@ export interface Transaction {
   paymentLinkId: string;
   date: Timestamp | string; 
   customer: string; 
+  customerEmail?: string;
+  customerPhone?: string;
   amount: number; 
   currency: string;
   status: 'Completed' | 'Pending' | 'Failed';
   reference: string; 
   method?: 'mpesa_stk' | 'mpesa_paybill' | 'card';
+  // MITO-specific fields
+  mitoReference?: string; // Reference returned by MITO
+  mitoTransactionId?: string; // Transaction ID from MITO
+  mitoStatus?: 'PROCESSED' | 'AWAITINGAFFILIATEUPDATE' | 'INREVIEW' | 'FAILED' | 'CANCELLED' | 'INPROGRESS' | 'NEW';
+  mitoPaymentUrl?: string; // Hosted payment page URL
   createdAt: Timestamp | string;
+  updatedAt?: Timestamp | string;
 }
 
 export interface Beneficiary {

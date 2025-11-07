@@ -15,12 +15,12 @@ import { HelpCircle } from 'lucide-react';
 import React, { useEffect } from 'react';
 import { AppLogo } from '@/components/shared/app-logo';
 import { useAuth } from '@/contexts/auth-context';
-import { api } from '@/lib/api';
-import type { FurpLoginResponse, FurpUser } from '@/lib/types';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 
-// Schema now only validates the email, as password is not user-input anymore.
 const loginSchema = z.object({
   email: z.string().email({ message: 'A valid email is required to log in.' }),
+  password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -38,71 +38,46 @@ const GoogleIcon = () => (
 const LoginPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
-  const { login, user, initialLoadComplete } = useAuth();
+  const { signIn, user, loading } = useAuth();
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       email: '',
+      password: '',
     },
   });
 
   useEffect(() => {
-    if (initialLoadComplete && user) {
+    if (!loading && user) {
       router.push('/dashboard');
     }
-  }, [user, initialLoadComplete, router]);
-
-
-  const handleSuccessfulLogin = (token: string, email: string) => {
-    try {
-        const decodedToken: { sub: string } = JSON.parse(atob(token.split('.')[1]));
-        const userId = decodedToken.sub;
-        
-        const mockUser: FurpUser = {
-            userId: userId,
-            email: email,
-            firstName: email.split('@')[0],
-            lastName: '',
-            countryIso3: 'USA',
-            phoneNumber: '',
-            legalEntityType: 'I',
-            created_at: new Date().toISOString()
-        };
-        
-        login(token, mockUser);
-
-        toast({
-            title: "Login Successful",
-            description: "Redirecting to dashboard...",
-        });
-        router.push('/dashboard');
-    } catch (e) {
-        console.error("JWT Decode Error:", e);
-        toast({ title: "Login Error", description: "Could not process login response.", variant: "destructive" });
-    }
-  };
-
+  }, [user, loading, router]);
 
   const onSubmit = async (data: LoginFormValues) => {
     try {
-      const response = await api.post<FurpLoginResponse>('/auth/login', {
-        username: 'Upesi',
-        password: '3pIi3U3nFa1Y5cYm4Q4',
-        AccessServiceNumber: '21036',
-        AccessAffiliateNumber: '1073',
+      await signIn(data.email, data.password);
+      
+      toast({
+        title: "Login Successful",
+        description: "Redirecting to dashboard...",
       });
-
-      if (response.data.code === 200 && response.data.data.token) {
-        // Use the user-provided email for the mock user object, not the static login username.
-        handleSuccessfulLogin(response.data.data.token, data.email);
-      } else {
-        throw new Error(response.data.message || 'Invalid response from server');
-      }
-
+      router.push('/dashboard');
     } catch (error: any) {
       console.error('Login error:', error);
-      const errorMessage = error.response?.data?.message || 'Authentication failed. Please check the credentials and try again.';
+      
+      let errorMessage = 'Authentication failed. Please check your credentials.';
+      
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email.';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address.';
+      } else if (error.code === 'auth/user-disabled') {
+        errorMessage = 'This account has been disabled.';
+      }
+      
       toast({
         title: "Login Failed",
         description: errorMessage,
@@ -112,11 +87,23 @@ const LoginPage: NextPage = () => {
   };
 
   const handleGoogleSignIn = async () => {
-    toast({
-        title: "Not Implemented",
-        description: "Google Sign-In is not supported by the Furp API specification.",
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      
+      toast({
+        title: "Login Successful",
+        description: "Redirecting to dashboard...",
+      });
+      router.push('/dashboard');
+    } catch (error: any) {
+      console.error('Google sign-in error:', error);
+      toast({
+        title: "Google Sign-In Failed",
+        description: error.message || "Failed to sign in with Google",
         variant: "destructive"
-    });
+      });
+    }
   };
   
   const isFormSubmitting = form.formState.isSubmitting;
@@ -147,6 +134,23 @@ const LoginPage: NextPage = () => {
                       <Input 
                         type="email" 
                         placeholder="Email" 
+                        {...field} 
+                        className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Input 
+                        type="password" 
+                        placeholder="Password" 
                         {...field} 
                         className="bg-secondary border-secondary focus:ring-primary rounded-lg h-12 px-4 text-base"
                       />

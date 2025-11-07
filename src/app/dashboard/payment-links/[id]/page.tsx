@@ -33,7 +33,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
   const { id: paymentLinkIdString } = params;
   const paymentLinkId = paymentLinkIdString as string;
   const { toast } = useToast();
-  const { user, loading: authLoading, initialLoadComplete } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [paymentLink, setPaymentLink] = useState<PaymentLink | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -60,7 +60,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
 
 
   useEffect(() => {
-    if (!initialLoadComplete) return;
+    if (authLoading) return;
 
     if (!user) {
       router.push('/login');
@@ -118,7 +118,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
       unsubscribeLink();
       unsubscribeTransactions();
     };
-  }, [paymentLinkId, user, initialLoadComplete, router, toast]);
+  }, [paymentLinkId, user, router, toast]);
 
   const paginatedTransactions = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -217,7 +217,7 @@ const PaymentLinkDetailsPage: NextPage = () => {
     }
   };
 
-  const isLoading = authLoading || !initialLoadComplete || loadingLinkDetails || loadingLinkTransactions;
+  const isLoading = authLoading  || loadingLinkDetails || loadingLinkTransactions;
 
   if (isLoading) {
     return (

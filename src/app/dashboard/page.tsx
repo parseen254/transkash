@@ -79,7 +79,7 @@ const NoChartDataDisplay = ({ onRefreshClick, className }: { onRefreshClick?: ()
 );
 
 const DashboardPage: NextPage = () => {
-  const { user, loading: authLoading, initialLoadComplete } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -100,7 +100,7 @@ const DashboardPage: NextPage = () => {
 
   const [selectedDateRangePreset, setSelectedDateRangePreset] = useState<DateRangePreset>("lastYear");
 
-  const loadingStatsAndCharts = authLoading || !initialLoadComplete || loadingLinks || loadingTransactionsData;
+  const loadingStatsAndCharts = authLoading || loadingLinks || loadingTransactionsData;
 
   const getDateRange = useCallback(() => {
     const now = new Date();
@@ -121,9 +121,9 @@ const DashboardPage: NextPage = () => {
 
 
   useEffect(() => {
-    if (!initialLoadComplete || !user) {
-      setLoadingRecentTransactions(!initialLoadComplete || authLoading);
-      if (initialLoadComplete && !user && !authLoading) router.push('/login');
+    if (authLoading || !user) {
+      setLoadingRecentTransactions(authLoading);
+      if (!authLoading && !user) router.push('/login');
       return;
     }
 
@@ -150,7 +150,7 @@ const DashboardPage: NextPage = () => {
     });
 
     return () => unsubscribe();
-  }, [user, initialLoadComplete, authLoading, router, toast]);
+  }, [user, authLoading, router, toast]);
 
 
   const processDashboardData = useCallback((transactions: Transaction[], paymentLinks: PaymentLink[]) => {
@@ -260,9 +260,9 @@ const DashboardPage: NextPage = () => {
   }, [user, getDateRange]);
 
   useEffect(() => {
-    if (!user || !initialLoadComplete) {
-        setLoadingLinks(!initialLoadComplete || authLoading);
-        setLoadingTransactionsData(!initialLoadComplete || authLoading);
+    if (!user || authLoading) {
+        setLoadingLinks(authLoading);
+        setLoadingTransactionsData(authLoading);
         return;
     }
 
@@ -321,14 +321,14 @@ const DashboardPage: NextPage = () => {
         unsubscribeLinks();
         unsubscribeTransactions();
     };
-  }, [user, initialLoadComplete, authLoading, toast, getDateRange]);
+  }, [user, authLoading, toast, getDateRange]);
 
   useEffect(() => {
-    if (authLoading || !initialLoadComplete || !user || loadingLinks || loadingTransactionsData) {
+    if (authLoading || !user || loadingLinks || loadingTransactionsData) {
       return; 
     }
     processDashboardData(allUserTransactionsData, userPaymentLinks);
-  }, [allUserTransactionsData, userPaymentLinks, user, initialLoadComplete, authLoading, loadingLinks, loadingTransactionsData, processDashboardData]);
+  }, [allUserTransactionsData, userPaymentLinks, user, authLoading, loadingLinks, loadingTransactionsData, processDashboardData]);
 
 
   const handleRefreshAllData = () => {
@@ -336,7 +336,7 @@ const DashboardPage: NextPage = () => {
   };
 
 
-  if (authLoading || !initialLoadComplete || (!user && initialLoadComplete)) {
+  if (authLoading || (!user && !authLoading)) {
     return (
         <div className="flex justify-center items-center h-full p-8">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
