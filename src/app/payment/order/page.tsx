@@ -4,17 +4,19 @@
 import type { NextPage } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense, useCallback } from 'react';
-import { HelpCircle, CreditCard, AlertCircle } from 'lucide-react';
+import { HelpCircle, CreditCard, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLogo } from '@/components/shared/app-logo';
 import { Label } from "@/components/ui/label";
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Spinner } from '@/components/ui/spinner';
 import type { PaymentLink } from '@/lib/types';
 import { format } from 'date-fns';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { SUPPORTED_COUNTRIES, SERVICE_CODES, COLLECTION_MODES, getCurrencyByCountry } from '@/lib/constants';
 
 // Payment is now handled via MITO's hosted payment page
 // Customer will select payment method on MITO's secure page
@@ -32,7 +34,16 @@ const PaymentForOrderContent: React.FC = () => {
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
-  const [useTestMode, setUseTestMode] = useState(false); // Test mode for UAT
+  const [useTestMode, setUseTestMode] = useState(false);
+  
+  // Payment method selection
+  const [selectedCountry, setSelectedCountry] = useState('');
+  const [selectedService, setSelectedService] = useState('');
+  const [selectedCollectionMode, setSelectedCollectionMode] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState('');
+  const [providers, setProviders] = useState<any[]>([]);
+  const [loadingProviders, setLoadingProviders] = useState(false);
+  const [providersError, setProvidersError] = useState<string | null>(null);
 
   useEffect(() => {
     const paymentLinkId = searchParams.get('paymentLinkId');
@@ -77,6 +88,57 @@ const PaymentForOrderContent: React.FC = () => {
     }
   }, [searchParams]);
 
+  // Fetch providers when country, service, or collection mode changes
+  useEffect(() => {
+    const fetchProviders = async () => {
+      if (!selectedCountry || !selectedService) {
+        setProviders([]);
+        return;
+      }
+
+      setLoadingProviders(true);
+      setProvidersError(null);
+      setSelectedProvider('');
+
+      try {
+        const country = SUPPORTED_COUNTRIES.find(c => c.code === selectedCountry);
+        if (!country) return;
+
+        const params = new URLSearchParams({
+          country: country.code,
+          currency: country.currency,
+          service: selectedService,
+        });
+
+        if (selectedCollectionMode) {
+          params.append('collectionMode', selectedCollectionMode);
+        }
+
+        const response = await fetch(`/api/mito/providers?${params}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to fetch providers');
+        }
+
+        setProviders(data.providers || []);
+        
+        if (data.providers.length === 0) {
+          setProvidersError(`No providers available for ${country.name} with selected options. Try different service or collection mode.`);
+        }
+
+      } catch (error: any) {
+        console.error('Error fetching providers:', error);
+        setProvidersError(error.message || 'Failed to load payment providers');
+        setProviders([]);
+      } finally {
+        setLoadingProviders(false);
+      }
+    };
+
+    fetchProviders();
+  }, [selectedCountry, selectedService, selectedCollectionMode]);
+
   const handlePayment = async () => {
     if (!currentPaymentLink) {
       toast({ title: "Error", description: "Payment details missing.", variant: "destructive" });
@@ -92,6 +154,24 @@ const PaymentForOrderContent: React.FC = () => {
     if (!customerEmail.trim() || !customerEmail.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
       toast({ title: "Error", description: "Please enter a valid email address.", variant: "destructive" });
       return;
+    }
+
+    // Validate payment method selection (unless test mode)
+    if (!useTestMode) {
+      if (!selectedCountry) {
+        toast({ title: "Error", description: "Please select your country.", variant: "destructive" });
+        return;
+      }
+
+      if (!selectedService) {
+        toast({ title: "Error", description: "Please select a service type.", variant: "destructive" });
+        return;
+      }
+
+      if (!selectedProvider) {
+        toast({ title: "Error", description: "Please select a payment provider.", variant: "destructive" });
+        return;
+      }
     }
 
     setIsSubmittingPayment(true);
@@ -110,7 +190,14 @@ const PaymentForOrderContent: React.FC = () => {
           customerName: customerName.trim(),
           customerEmail: customerEmail.trim(),
           customerPhone: customerPhone.trim(),
-          ...(useTestMode && { simulate: 'success' }), // Test mode simulation
+          ...(useTestMode && { simulate: 'success' }),
+          // Payment method details (not needed in test mode)
+          ...(!useTestMode && {
+            targetCountry: selectedCountry,
+            serviceCode: selectedService,
+            collectionMode: selectedCollectionMode || undefined,
+            providerId: selectedProvider,
+          }),
         }),
       });
 
@@ -239,6 +326,126 @@ const PaymentForOrderContent: React.FC = () => {
             disabled={isSubmittingPayment}
           />
         </div>
+        
+        {/* Payment Method Selection - only show if not in test mode */}
+        {!useTestMode && (
+          <>
+            <div className="pt-4 border-t border-border">
+              <p className="text-base font-medium text-foreground mb-4">Payment Method</p>
+              
+              {/* Country Selection */}
+              <div className="mb-4">
+                <Label htmlFor="country" className="text-sm font-medium text-muted-foreground">Select Country *</Label>
+                <Select value={selectedCountry} onValueChange={(value) => {
+                  setSelectedCountry(value);
+                  setSelectedService('');
+                  setSelectedCollectionMode('');
+                  setSelectedProvider('');
+                }} disabled={isSubmittingPayment}>
+                  <SelectTrigger className="mt-1 h-12">
+                    <SelectValue placeholder="Choose your country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_COUNTRIES.map((country) => (
+                      <SelectItem key={country.code} value={country.code}>
+                        <span className="flex items-center gap-2">
+                          <span>{country.flag}</span>
+                          <span>{country.name} ({country.currency})</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Service Type Selection */}
+              <div className="mb-4">
+                <Label htmlFor="service" className="text-sm font-medium text-muted-foreground">Payment Service *</Label>
+                <Select value={selectedService} onValueChange={(value) => {
+                  setSelectedService(value);
+                  setSelectedCollectionMode('');
+                  setSelectedProvider('');
+                }} disabled={!selectedCountry || isSubmittingPayment}>
+                  <SelectTrigger className="mt-1 h-12">
+                    <SelectValue placeholder="Select service type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SERVICE_CODES.map((service) => (
+                      <SelectItem key={service.code} value={service.code}>
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">{service.name}</span>
+                          <span className="text-xs text-muted-foreground">{service.description}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Collection Mode Selection */}
+              <div className="mb-4">
+                <Label htmlFor="collectionMode" className="text-sm font-medium text-muted-foreground">Collection Method</Label>
+                <Select value={selectedCollectionMode} onValueChange={setSelectedCollectionMode} disabled={!selectedService || isSubmittingPayment}>
+                  <SelectTrigger className="mt-1 h-12">
+                    <SelectValue placeholder="Select collection method (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COLLECTION_MODES.map((mode) => (
+                      <SelectItem key={mode.code} value={mode.code}>
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">{mode.name}</span>
+                          <span className="text-xs text-muted-foreground">{mode.description}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Provider Selection */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-1">
+                  <Label htmlFor="provider" className="text-sm font-medium text-muted-foreground">Payment Provider *</Label>
+                  {loadingProviders && <Spinner className="h-4 w-4" />}
+                </div>
+                <Select value={selectedProvider} onValueChange={setSelectedProvider} disabled={!selectedService || loadingProviders || providers.length === 0 || isSubmittingPayment}>
+                  <SelectTrigger className="mt-1 h-12">
+                    <SelectValue placeholder={
+                      loadingProviders ? "Loading providers..." :
+                      !selectedCountry ? "Select country first" :
+                      !selectedService ? "Select service first" :
+                      providers.length === 0 ? "No providers available" :
+                      "Select payment provider"
+                    } />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providers.map((provider) => (
+                      <SelectItem key={provider.providerId} value={provider.providerId}>
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">{provider.providerName}</span>
+                          {provider.providerCode && (
+                            <span className="text-xs text-muted-foreground">Code: {provider.providerCode}</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {providersError && (
+                  <p className="text-sm text-amber-600 dark:text-amber-500 mt-1 flex items-start gap-1">
+                    <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <span>{providersError}</span>
+                  </p>
+                )}
+                {!loadingProviders && selectedCountry && selectedService && providers.length > 0 && (
+                  <p className="text-sm text-green-600 dark:text-green-500 mt-1">
+                    ✓ {providers.length} provider{providers.length !== 1 ? 's' : ''} available
+                  </p>
+                )}
+              </div>
+            </div>
+          </>
+        )}
         
         {/* Test Mode Toggle for UAT */}
         {process.env.NODE_ENV === 'development' && (

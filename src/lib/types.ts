@@ -39,24 +39,22 @@ export interface PayoutAccount {
 }
 
 export interface PaymentLink {
-  id: string; 
+  id: string;
   userId: string;
-  creatorUserId?: string;
   linkName: string;
   reference: string;
   amount: number;
-  currency: string; 
+  currency: string;
   purpose: string;
-  creationDate: Timestamp | string;
-  expiryDate?: Timestamp | null | string; 
-  status: 'Active' | 'Expired' | 'Disabled' | 'Paid';
-  payoutAccountId: string; 
-  shortUrl: string; 
+  payoutAccountId: string;
+  creationDate: Timestamp | null;
+  expiryDate: Timestamp | null;
+  status: 'Active' | 'Inactive' | 'Paid' | 'Expired' | 'Disabled';
+  shortUrl: string;
   hasExpiry: boolean;
-  updatedAt?: Timestamp | string;
-}
-
-export interface Transaction {
+  updatedAt?: Timestamp;
+  creatorUserId?: string;
+}export interface Transaction {
   id: string; 
   userId: string; 
   paymentLinkId: string;
